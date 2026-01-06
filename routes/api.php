@@ -13,3 +13,6 @@ Route::post('addAccount', [Controller::class, 'addAccount']);
 Route::post('getAccountList', [Controller::class, 'getAccountList']);
 Route::post('addContributor', [Controller::class, 'addContributor']);
 Route::post('getContributorList', [Controller::class, 'getContributorList']);
+Route::post('getUserCategoryList', [Controller::class, 'getUserCategoryList']);
+Route::post('addUserCategory', [Controller::class, 'addUserCategory']);
+Route::post('updateUserSetting', [Controller::class, 'updateUserSetting']);

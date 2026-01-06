@@ -12,6 +12,9 @@ use App\Models\EmailTemplate;
 use App\Models\MailLog;
 use App\Models\Account;
 use App\Models\AccountContributor;
+use App\Models\Category;
+use App\Models\UserCategory;
+use App\Models\UserSetting;
 use App\Mail\MailTemp;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Mail;
@@ -297,6 +300,100 @@ class Controller
                     'status' => true,
                     'message' => 'Contributor list fetched successfully',
                     'data' => $contributors
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function getUserCategoryList(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $categories = Category::where('status', operator: '1')->get();
+                $userCategories = UserCategory::where(['user_id' => $user->id, 'status' => 1])->get();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User Specific category list fetched successfully',
+                    'data' => [
+                        'categories' => $categories,
+                        'user_categories' => $userCategories
+                    ]
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function addUserCategory(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->name)  && isset($request->description)) {
+                $request->validate([
+                    'token' => 'required',
+                    'name' => 'required|string',
+                    'description' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                UserCategory::create([
+                    "user_id" => $user->id,
+                    "name" => $request->name,
+                    "description" => $request->description,
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User Category added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function updateUserSetting(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->currency)  && isset($request->country) && isset($request->metadata)) {
+                $request->validate([
+                    'token' => 'required',
+                    'currency' => 'required|string',
+                    'country' => 'required|string',
+                    'metadata' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                UserSetting::updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        "currency" => $request->currency,
+                        "country" => $request->country,
+                        "metadata" => $request->metadata,
+                    ]
+                );
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User Setting updated successfully',
                 ]);
 
             } else {
