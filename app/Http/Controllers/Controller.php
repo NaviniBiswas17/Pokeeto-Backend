@@ -10,6 +10,8 @@ use App\Models\UserDetail;
 use App\Models\EmailOtp;
 use App\Models\EmailTemplate;
 use App\Models\MailLog;
+use App\Models\Account;
+use App\Models\AccountContributor;
 use App\Mail\MailTemp;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Mail;
@@ -162,15 +164,12 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'User not found'], 404);
                 }
-
                 if($request->newPass !== $request->confirmPass){
                     return response()->json(['status' => false, 'message' => 'Password and Confirm Password do not match'], 400);
                 }
-                $token = $user->createToken('api-token')->plainTextToken;
-                User::where('id', $user->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass), 'remember_token' => $token]);
+                User::where('id', $user->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass)]);
                 return response()->json([
                     'status' => true,
-                    'access_token' => $token,
                     'message' => 'Password created successfully',
                 ]);
 
@@ -182,52 +181,129 @@ class Controller
         }
     }
 
-    // Add expenses Controller
+    public function addAccount(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_name) && isset($request->default_currency) && isset($request->balance) && isset($request->is_primary)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_name' => 'required|string',
+                    'default_currency' => 'required|string',
+                    'balance' => 'required|numeric',
+                    'is_primary' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                Account::create([
+                    "user_id" => $user->id,
+                    "account_name" => $request->account_name,
+                    "default_currency" => $request->default_currency,
+                    "balance" => $request->balance,
+                    "is_primary" => $request->is_primary,
+                    'last_login_at' => now(),
+                    "status" => 1
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Account added successfully',
+                ]);
 
-    // public function createExpenses(Request $request)
-    // {
-    //     try {
-    //         if (isset($request->token) && isset($request->id) && isset($request->amount) && isset($request->account_type) && isset($request->category) && isset($request->comments)) {
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 
-    //             $request->validate([
-    //                 'amount' => ['required', 'numeric',],
-    //                 'account_type' => ['required', 'string'],
-    //                 'category' => ['required', 'string'],
-    //                 'date' => ['required', 'date'],
-    //                 'comments' => ['required', 'string'],
+    public function getAccountList(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $accounts = Account::where(['user_id' => $user->id, 'status' => 1])->get();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Account list fetched successfully',
+                    'data' => $accounts
+                ]);
 
-    //             ]);
-    //             $modelClass = $request->attributes->get('modelClass');
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function addContributor(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->contributor_id) && isset($request->role)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'contributor_id' => 'required|integer',
+                    'role' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $contributorUser = User::where(['id' => $request->contributor_id, 'status' => 1])->first();
+                if (!$contributorUser) {
+                    return response()->json(['status' => false, 'message' => 'Contributor User not found'], 404);
+                }
+                AccountContributor::create([
+                    "account_id" => $request->account_id,
+                    "contributor_id" => $request->contributor_id,
+                    "user_id" => $user->id,
+                    "role" => $request->role,
+                    "status" => 1
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Contributor added successfully',
+                ]);
 
-    //             if (!$modelClass || !class_exists($modelClass)) {
-    //                 return response()->json(['status' => false, 'message' => 'Model not found'], 404);
-    //             }
-    //             $expenses = (new $modelClass)->where(['remember_token' => $request->token, 'status' => 1])->first();
-    //             if (!$expenses) {
-    //                 return response()->json(['status' => false, 'message' => 'expenses not found'], 404);
-    //             }
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function getContributorList(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $contributors = AccountContributor::where(['account_id' => $request->account_id, 'status' => 1])->get();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Contributor list fetched successfully',
+                    'data' => $contributors
+                ]);
 
-
-    //             $expenses = Expenses::create([
-    //                 'id' => $request->id,
-    //                 'amount' => $request->amount,
-    //                 'account_type' => $request->accountType,
-    //                 'category' => $request->category,
-    //                 'date' => $request->date,
-    //                 'comments' => $request->comments,
-    //             ]);
-    //             if ($expenses) {
-    //                 return response()->json(['status' => true, 'message' => 'Expenses created successfully'], 201);
-    //             } else {
-    //                 return response()->json(['status' => false, 'message' => 'Expenses Creation Error'], 404);
-    //             }
-    //         } else {
-    //             return response()->json(['status' => false, 'message' => 'Parameters Empty'], 400);
-    //         }
-    //     } catch (\Exception $e) {
-    //         return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
-    //     }
-    // }
-
-
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 }

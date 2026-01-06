@@ -9,4 +9,7 @@ Route::post('login', [Controller::class, 'login']);
 Route::post('register', [Controller::class, 'register']);
 Route::post('verifyOtp', [Controller::class, 'verifyOtp']);
 Route::post('confirmPass', [Controller::class, 'confirmPass']);
-Route::post('addExpenses', [Controller::class, 'createExpenses']);
+Route::post('addAccount', [Controller::class, 'addAccount']);
+Route::post('getAccountList', [Controller::class, 'getAccountList']);
+Route::post('addContributor', [Controller::class, 'addContributor']);
+Route::post('getContributorList', [Controller::class, 'getContributorList']);
