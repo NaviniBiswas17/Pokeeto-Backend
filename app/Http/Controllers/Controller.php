@@ -372,12 +372,12 @@ class Controller
     public function updateUserSetting(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->currency)  && isset($request->country) && isset($request->metadata)) {
+            if (isset($request->token) && isset($request->currency)  && isset($request->country)) {
                 $request->validate([
                     'token' => 'required',
                     'currency' => 'required|string',
                     'country' => 'required|string',
-                    'metadata' => 'required|string',
+                    'metadata' => 'nullable|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
