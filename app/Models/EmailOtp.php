@@ -20,5 +20,5 @@ class EmailOtp extends Authenticatable
         'used_at',
     ];
 
-   
+
 }

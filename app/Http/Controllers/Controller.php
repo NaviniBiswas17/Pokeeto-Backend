@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use App\Models\UserDetail;
 use App\Models\EmailOtp;
+use App\Models\EmailTemplate;
+use App\Models\MailLog;
+use App\Mail\MailTemp;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Exception;
 use App\Models\Expenses;
 
@@ -41,9 +46,7 @@ class Controller
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
-
     }
-
     public function register(Request $request)
     {
         try {
@@ -68,13 +71,25 @@ class Controller
                     "phone" => $request->phone,
                     "dob" => $request->dob
                 ]);
-
+                $otp = '123456'; // Generate OTP here
+                $mailTemp = EmailTemplate::where('slug', 'registerOTP')->first();
+                $html = Blade::render($mailTemp->body, [
+                    'otp' => $otp,
+                    'validity_minutes' => env('OTP_VALIDITY_MINUTES', 10)
+                ]);
+                Mail::to($request->email)->send(new MailTemp($html, $mailTemp->subject));
                 EmailOtp::where('email', $request->email)->where('purpose', 'register')->update(['status' => '0']);
                 EmailOtp::create([
                     "email" => $request->email,
-                    "otp" => '123456',
+                    "otp" => $otp,
                     "purpose" => 'register',
                     "expires_at" => now()->addMinutes((int) env('OTP_VALIDITY_MINUTES', 10)),
+                ]);
+                MailLog::create([
+                    'to_email' => $request->email,
+                    'subject' => $mailTemp->subject,
+                    'body' => $html,
+                    'sent_at' => now(),
                 ]);
                 $token = $user->createToken('api-token')->plainTextToken;
 
@@ -83,9 +98,9 @@ class Controller
                     'status' => true,
                     'message' => 'Otp Sent successfully',
                     'access_token' => $token,
-                    
+
                 ]);
-                
+
             } else {
                 return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
             }
@@ -124,7 +139,7 @@ class Controller
                     'access_token' => $token,
                     'message' => 'Otp Verified successfully',
                 ]);
-                
+
             } else {
                 return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
             }
@@ -148,10 +163,14 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'User not found'], 404);
                 }
 
-                User::where('id', $request->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass), 'remember_token' => $request->token]);
+                if($request->newPass !== $request->confirmPass){
+                    return response()->json(['status' => false, 'message' => 'Password and Confirm Password do not match'], 400);
+                }
+                $token = $user->createToken('api-token')->plainTextToken;
+                User::where('id', $user->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass), 'remember_token' => $token]);
                 return response()->json([
                     'status' => true,
-                    'access_token' => $request->token,
+                    'access_token' => $token,
                     'message' => 'Password created successfully',
                 ]);
 
@@ -163,52 +182,52 @@ class Controller
         }
     }
 
-    // Add expenses Controller 
+    // Add expenses Controller
 
-    public function createExpenses(Request $request)
-    {
-        try {
-            if (isset($request->token) && isset($request->id) && isset($request->amount) && isset($request->account_type) && isset($request->category) && isset($request->comments)) {
+    // public function createExpenses(Request $request)
+    // {
+    //     try {
+    //         if (isset($request->token) && isset($request->id) && isset($request->amount) && isset($request->account_type) && isset($request->category) && isset($request->comments)) {
 
-                $request->validate([
-                    'amount' => ['required', 'numeric',],
-                    'account_type' => ['required', 'string'],
-                    'category' => ['required', 'string'],
-                    'date' => ['required', 'date'],
-                    'comments' => ['required', 'string'],
+    //             $request->validate([
+    //                 'amount' => ['required', 'numeric',],
+    //                 'account_type' => ['required', 'string'],
+    //                 'category' => ['required', 'string'],
+    //                 'date' => ['required', 'date'],
+    //                 'comments' => ['required', 'string'],
 
-                ]);
-                $modelClass = $request->attributes->get('modelClass');
+    //             ]);
+    //             $modelClass = $request->attributes->get('modelClass');
 
-                if (!$modelClass || !class_exists($modelClass)) {
-                    return response()->json(['status' => false, 'message' => 'Model not found'], 404);
-                }
-                $expenses = (new $modelClass)->where(['remember_token' => $request->token, 'status' => 1])->first();
-                if (!$expenses) {
-                    return response()->json(['status' => false, 'message' => 'expenses not found'], 404);
-                }
+    //             if (!$modelClass || !class_exists($modelClass)) {
+    //                 return response()->json(['status' => false, 'message' => 'Model not found'], 404);
+    //             }
+    //             $expenses = (new $modelClass)->where(['remember_token' => $request->token, 'status' => 1])->first();
+    //             if (!$expenses) {
+    //                 return response()->json(['status' => false, 'message' => 'expenses not found'], 404);
+    //             }
 
 
-                $expenses = Expenses::create([
-                    'id' => $request->id,
-                    'amount' => $request->amount,
-                    'account_type' => $request->accountType,
-                    'category' => $request->category,
-                    'date' => $request->date,
-                    'comments' => $request->comments,
-                ]);
-                if ($expenses) {
-                    return response()->json(['status' => true, 'message' => 'Expenses created successfully'], 201);
-                } else {
-                    return response()->json(['status' => false, 'message' => 'Expenses Creation Error'], 404);
-                }
-            } else {
-                return response()->json(['status' => false, 'message' => 'Parameters Empty'], 400);
-            }
-        } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
+    //             $expenses = Expenses::create([
+    //                 'id' => $request->id,
+    //                 'amount' => $request->amount,
+    //                 'account_type' => $request->accountType,
+    //                 'category' => $request->category,
+    //                 'date' => $request->date,
+    //                 'comments' => $request->comments,
+    //             ]);
+    //             if ($expenses) {
+    //                 return response()->json(['status' => true, 'message' => 'Expenses created successfully'], 201);
+    //             } else {
+    //                 return response()->json(['status' => false, 'message' => 'Expenses Creation Error'], 404);
+    //             }
+    //         } else {
+    //             return response()->json(['status' => false, 'message' => 'Parameters Empty'], 400);
+    //         }
+    //     } catch (\Exception $e) {
+    //         return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+    //     }
+    // }
 
 
 }
