@@ -15,6 +15,8 @@ use App\Models\AccountContributor;
 use App\Models\Category;
 use App\Models\UserCategory;
 use App\Models\UserSetting;
+use App\Models\Transaction;
+use App\Models\ReminderPayment;
 use App\Mail\MailTemp;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Mail;
@@ -246,6 +248,32 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+    public function getAccount(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $account = Account::where(['user_id' => $user->id, 'id' => $request->account_id, 'status' => 1])->first();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Account fetched successfully',
+                    'data' => $account
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     public function addContributor(Request $request)
     {
         try {
@@ -296,6 +324,14 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
                 $contributors = AccountContributor::where(['account_id' => $request->account_id, 'status' => 1])->get();
+                foreach($contributors as $contributor){
+                    $contributorData = UserDetail::where(['user_id' => $contributor->contributor_id, 'status' => 1])->first();
+                    $contributor->contributorData = $contributorData;
+                    $accountData = Account::where(['id' => $contributor->account_id, 'status' => 1])->first();
+                    $contributor->accountData = $accountData;
+                    $userData = UserDetail::where(['user_id' => $contributor->user_id, 'status' => 1])->first();
+                    $contributor->userData = $userData;
+                }
                 return response()->json([
                     'status' => true,
                     'message' => 'Contributor list fetched successfully',
@@ -369,11 +405,39 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+    public function getUserDetails(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $userDetails = UserDetail::where(['user_id' => $user->id, 'status' => 1])->first();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User details fetched successfully',
+                    'data' => $userDetails
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     public function updateUserSetting(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->currency)  && isset($request->country)) {
+            if (isset($request->token) && isset($request->name) && isset($request->phone) && isset($request->dob) && isset($request->currency)  && isset($request->country)) {
                 $request->validate([
+                    'name' => 'required|string',
+                    'phone'=> 'required|string',
+                    'dob'=> 'required|date',
                     'token' => 'required',
                     'currency' => 'required|string',
                     'country' => 'required|string',
@@ -391,9 +455,370 @@ class Controller
                         "metadata" => $request->metadata,
                     ]
                 );
+                UserDetail::where('user_id', $user->id)->update([
+                    "name" => $request->name,
+                    "phone" => $request->phone,
+                    "dob" => $request->dob
+                ]);
                 return response()->json([
                     'status' => true,
                     'message' => 'User Setting updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function addTransaction(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'transaction_type' => 'required|string',
+                    'flow' => 'required|string',
+                    'amount' => 'required|numeric',
+                    'currency' => 'required|string',
+                    'target_account_id' => 'nullable|integer',
+                    'contributor_id' => 'nullable|integer',
+                    'description' => 'nullable|string',
+                    'reference' => 'nullable|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                if($request->transaction_type === 'transfer'){
+                    if(isset($request->target_account_id)){
+                        $targetAccount = Account::where(['id' => $request->target_account_id, 'status' => 1])->first();
+                        if($targetAccount){
+                            $sourceAccount = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                            if($sourceAccount){
+                                if($sourceAccount->balance < $request->amount){
+                                    return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
+                                }else{
+                                    $sourceAccount->balance -= $request->amount;
+                                    $sourceAccount->save();
+                                    $targetAccount->balance += $request->amount;
+                                    $targetAccount->save();
+                                }
+                            }else{
+                                return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
+                            }
+                        }else{
+                            return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
+                        }
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
+                    }
+                }
+
+                if($request->transaction_type === 'income' || $request->transaction_type === 'expense'){
+                    $account = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                    if($account){
+                        if($request->transaction_type === 'income'){
+                            $account->balance += $request->amount;
+                        }else if($request->transaction_type === 'expense'){
+                            if($account->balance < $request->amount){
+                                return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
+                            }else{
+                                $account->balance -= $request->amount;
+                            }
+                        }
+                        $account->save();
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                    }
+                }
+                $transaction = Transaction::create([
+                    "user_id" => $user->id,
+                    "account_id" => $request->account_id,
+                    "target_account_id" => $request->target_account_id,
+                    "contributor_id" => $request->contributor_id,
+                    "transaction_type" => $request->transaction_type,
+                    "flow" => $request->flow,
+                    "amount" => $request->amount,
+                    "currency" => $request->currency,
+                    "description" => $request->description,
+                    "processStatus" => $request->transaction_type === 'reminder' ? 'pending' : 'completed',
+                    "status" => 1,
+                    "reference" => $request->reference,
+                ]);
+                if($request->transaction_type === 'reminder'){
+                    if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
+                        $request->validate([
+                            'reminder_date' => 'required|date',
+                            'reminder_time' => 'required',
+                            'recurrence' => 'required|string',
+                            'notify_before_minutes' => 'required|integer',
+                        ]);
+                        ReminderPayment::create([
+                            "transaction_id" => $transaction->id,
+                            "reminder_date" => $request->reminder_date,
+                            "reminder_time" => $request->reminder_time,
+                            "recurrence" => $request->recurrence,
+                            "notify_before_minutes" => $request->notify_before_minutes,
+                            "status" => 1
+                        ]);
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Empty Parameters for reminder transaction'], 400);
+                    }
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getTransaction(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->transaction_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'transaction_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                if($transaction->transaction_type === 'reminder'){
+                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
+                    $transaction->reminderPayment = $reminderPayment;
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction fetched successfully',
+                    'data' => $transaction
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function deleteTransaction(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->transaction_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'transaction_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                if($transaction->transaction_type === 'reminder'){
+                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
+                    if($reminderPayment){
+                        $reminderPayment->update(['status' => 0]);
+                    }
+                }
+                if($transaction->transaction_type === 'transfer'){
+                    $sourceAccount = Account::where(['id' => $transaction->account_id, 'status' => 1])->first();
+                    $targetAccount = Account::where(['id' => $transaction->target_account_id, 'status' => 1])->first();
+                    if($sourceAccount && $targetAccount){
+                        if($transaction->flow === 'debit'){
+                            $targetAccount->balance -= $transaction->amount;
+                            $sourceAccount->balance += $transaction->amount;
+                        }else if($transaction->flow === 'credit'){
+                            $targetAccount->balance += $transaction->amount;
+                            $sourceAccount->balance -= $transaction->amount;
+                        }
+                        $sourceAccount->save();
+                        $targetAccount->save();
+                    }
+                }
+                if($transaction->transaction_type === 'income' || $transaction->transaction_type === 'expense'){
+                    $account = Account::where(['id' => $transaction->account_id, 'status' => 1])->first();
+                    if($account){
+                        if($transaction->transaction_type === 'income'){
+                            $account->balance -= $transaction->amount;
+                        }else if($transaction->transaction_type === 'expense'){
+                            $account->balance += $transaction->amount;
+                        }
+                        $account->save();
+                    }
+                }
+                $transaction->update(['status' => 0]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction deleted successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function editTransaction(Request $request)
+    {
+        try {
+            if (isset($request->transaction_id) && isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency)) {
+                $request->validate([
+                    'transaction_id' => 'required|integer',
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'transaction_type' => 'required|string',
+                    'flow' => 'required|string',
+                    'amount' => 'required|numeric',
+                    'currency' => 'required|string',
+                    'target_account_id' => 'nullable|integer',
+                    'contributor_id' => 'nullable|integer',
+                    'description' => 'nullable|string',
+                    'reference' => 'nullable|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                // Revert previous transaction effects first
+                $prevAmount = $transaction->amount;
+                $prevType = $transaction->transaction_type;
+                $prevAccountId = $transaction->account_id;
+                $prevTargetId = $transaction->target_account_id;
+                $prevFlow = $transaction->flow;
+
+                if($prevType === 'transfer'){
+                    $sourcePrev = Account::where(['id' => $prevAccountId, 'status' => 1])->first();
+                    $targetPrev = Account::where(['id' => $prevTargetId, 'status' => 1])->first();
+                    if($sourcePrev && $targetPrev){
+                        if($prevFlow === 'debit'){
+                            $targetPrev->balance -= $prevAmount;
+                            $sourcePrev->balance += $prevAmount;
+                        }else if($prevFlow === 'credit'){
+                            $targetPrev->balance += $prevAmount;
+                            $sourcePrev->balance -= $prevAmount;
+                        }else{
+                            // fallback reverse assuming original add used account_id as source
+                            $sourcePrev->balance += $prevAmount;
+                            $targetPrev->balance -= $prevAmount;
+                        }
+                        $sourcePrev->save();
+                        $targetPrev->save();
+                    }
+                } elseif($prevType === 'income' || $prevType === 'expense'){
+                    $accPrev = Account::where(['id' => $prevAccountId, 'status' => 1])->first();
+                    if($accPrev){
+                        if($prevType === 'income'){
+                            $accPrev->balance -= $prevAmount;
+                        }else{
+                            $accPrev->balance += $prevAmount;
+                        }
+                        $accPrev->save();
+                    }
+                }
+
+                if($request->transaction_type === 'transfer'){
+                    if(isset($request->target_account_id)){
+                        $targetAccount = Account::where(['id' => $request->target_account_id, 'status' => 1])->first();
+                        if($targetAccount){
+                            $sourceAccount = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                            if($sourceAccount){
+                                if($sourceAccount->balance < $request->amount){
+                                    return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
+                                }else{
+                                    $sourceAccount->balance -= $request->amount;
+                                    $sourceAccount->save();
+                                    $targetAccount->balance += $request->amount;
+                                    $targetAccount->save();
+                                }
+                            }else{
+                                return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
+                            }
+                        }else{
+                            return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
+                        }
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
+                    }
+                }
+
+                if($request->transaction_type === 'income' || $request->transaction_type === 'expense'){
+                    $account = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                    if($account){
+                        if($request->transaction_type === 'income'){
+                            $account->balance += $request->amount;
+                        }else if($request->transaction_type === 'expense'){
+                            if($account->balance < $request->amount){
+                                return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
+                            }else{
+                                $account->balance -= $request->amount;
+                            }
+                        }
+                        $account->save();
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                    }
+                }
+                Transaction::where(['id' => $request->transaction_id])->update([
+                    "user_id" => $user->id,
+                    "account_id" => $request->account_id,
+                    "target_account_id" => $request->target_account_id,
+                    "contributor_id" => $request->contributor_id,
+                    "transaction_type" => $request->transaction_type,
+                    "flow" => $request->flow,
+                    "amount" => $request->amount,
+                    "currency" => $request->currency,
+                    "description" => $request->description,
+                    "processStatus" => $request->transaction_type === 'reminder' ? 'pending' : 'completed',
+                    "status" => 1,
+                    "reference" => $request->reference,
+                ]);
+                if($request->transaction_type === 'reminder'){
+                    if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
+                        $request->validate([
+                            'reminder_date' => 'required|date',
+                            'reminder_time' => 'required',
+                            'recurrence' => 'required|string',
+                            'notify_before_minutes' => 'required|integer',
+                        ]);
+                        ReminderPayment::where(['transaction_id' => $request->transaction_id])->update([
+                            "transaction_id" => $request->transaction_id,
+                            "reminder_date" => $request->reminder_date,
+                            "reminder_time" => $request->reminder_time,
+                            "recurrence" => $request->recurrence,
+                            "notify_before_minutes" => $request->notify_before_minutes,
+                            "status" => 1
+                        ]);
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Empty Parameters for reminder transaction'], 400);
+                    }
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction updated successfully',
                 ]);
 
             } else {
