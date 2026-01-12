@@ -476,7 +476,7 @@ class Controller
     public function addTransaction(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency)) {
+            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id)) {
                 $request->validate([
                     'token' => 'required',
                     'account_id' => 'required|integer',
@@ -484,6 +484,7 @@ class Controller
                     'flow' => 'required|string',
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
+                    'category_id'=> 'required|integer',
                     'target_account_id' => 'nullable|integer',
                     'contributor_id' => 'nullable|integer',
                     'description' => 'nullable|string',
@@ -544,6 +545,7 @@ class Controller
                     "flow" => $request->flow,
                     "amount" => $request->amount,
                     "currency" => $request->currency,
+                    "category_id" => $request->category_id,
                     "description" => $request->description,
                     "processStatus" => $request->transaction_type === 'reminder' ? 'pending' : 'completed',
                     "status" => 1,
@@ -596,6 +598,39 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
                 $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                if($transaction->transaction_type === 'reminder'){
+                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
+                    $transaction->reminderPayment = $reminderPayment;
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction fetched successfully',
+                    'data' => $transaction
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function getTransactionList(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
@@ -680,7 +715,7 @@ class Controller
     public function editTransaction(Request $request)
     {
         try {
-            if (isset($request->transaction_id) && isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency)) {
+            if (isset($request->transaction_id) && isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id)) {
                 $request->validate([
                     'transaction_id' => 'required|integer',
                     'token' => 'required',
@@ -689,6 +724,7 @@ class Controller
                     'flow' => 'required|string',
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
+                    'category_id' => 'required|integer',
                     'target_account_id' => 'nullable|integer',
                     'contributor_id' => 'nullable|integer',
                     'description' => 'nullable|string',
@@ -790,6 +826,7 @@ class Controller
                     "flow" => $request->flow,
                     "amount" => $request->amount,
                     "currency" => $request->currency,
+                    "category_id" => $request->category_id,
                     "description" => $request->description,
                     "processStatus" => $request->transaction_type === 'reminder' ? 'pending' : 'completed',
                     "status" => 1,

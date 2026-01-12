@@ -18,6 +18,7 @@ Route::post('getUserCategoryList', [Controller::class, 'getUserCategoryList']);
 Route::post('addUserCategory', [Controller::class, 'addUserCategory']);
 Route::post('getUserDetails', [Controller::class, 'getUserDetails']);
 Route::post('updateUserSetting', [Controller::class, 'updateUserSetting']);
+Route::post('getTransactionList', [Controller::class, 'getTransactionList']);
 Route::post('addTransaction', [Controller::class, 'addTransaction']);
 Route::post('getTransaction', [Controller::class, 'getTransaction']);
 Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
