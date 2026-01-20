@@ -25,3 +25,4 @@ Route::post('addTransaction', [Controller::class, 'addTransaction']);
 Route::post('getTransaction', [Controller::class, 'getTransaction']);
 Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
 Route::post('editTransaction', [Controller::class, 'editTransaction']);
+Route::post('addKid', [Controller::class, 'addKid']);
