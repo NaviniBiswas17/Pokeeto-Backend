@@ -25,71 +25,72 @@ use App\Models\Expenses;
 
 class Controller
 {
-    public function login(Request $request)
+    // public function login(Request $request)
+    // {
+    //     try {
+    //         if (isset($request->email) && isset($request->password)) {
+    //             $request->validate([
+    //                 'email' => 'required|email',
+    //                 'password' => 'required',
+    //             ]);
+
+    //             $user = User::where(['email' => $request->email, 'status' => 1])->first();
+
+    //             if (!$user || !Hash::check($request->password, $user->password)) {
+    //                 return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+    //             }
+    //             $token = $user->createToken('api-token')->plainTextToken;
+
+    //             User::where('id', $user->id)->update(['email_verified_at' => now(), 'remember_token' => $token]);
+    //             return response()->json([
+    //                 'status' => true,
+    //                 'message' => 'Login successful',
+    //                 'access_token' => $token,
+    //             ]);
+    //         } else {
+    //             return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+    //         }
+    //     } catch (\Exception $e) {
+    //         return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+    //     }
+    // }
+    public function sendOtp(Request $request)
     {
         try {
-            if (isset($request->email) && isset($request->password)) {
+            if (isset($request->email)) {
                 $request->validate([
                     'email' => 'required|email',
-                    'password' => 'required',
                 ]);
-
                 $user = User::where(['email' => $request->email, 'status' => 1])->first();
+                if (!$user) {
+                    $name = explode('@', $request->email)[0];
+                    $request->merge(['name' => $name]);
 
-                if (!$user || !Hash::check($request->password, $user->password)) {
-                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                    User::create([
+                        "name" => $request->name,
+                        "email" => $request->email,
+                        "password" =>   hash::make('12346'),
+                    ]);
+                    $user = User::where('email', $request->email)->first();
+                    UserDetail::create([
+                        "user_id" => $user->id,
+                        "name" => $request->name,
+                        "email" => $request->email,
+                    ]);
                 }
-                $token = $user->createToken('api-token')->plainTextToken;
 
-                User::where('id', $user->id)->update(['email_verified_at' => now(), 'remember_token' => $token]);
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Login successful',
-                    'access_token' => $token,
-                ]);
-            } else {
-                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
-            }
-        } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
-    public function register(Request $request)
-    {
-        try {
-            if (isset($request->name) && isset($request->email) && isset($request->phone) && isset($request->dob)) {
-                $request->validate([
-                    'name' => 'required|string',
-                    'email' => 'required|email',
-                    'phone' => 'required|string',
-                    'dob' => 'required|date',
-                ]);
-
-                User::create([
-                    "name" => $request->name,
-                    "email" => $request->email,
-                    "password" =>   hash::make('12346'),
-                ]);
-                $user = User::where('email', $request->email)->first();
-                UserDetail::create([
-                    "user_id" => $user->id,
-                    "name" => $request->name,
-                    "email" => $request->email,
-                    "phone" => $request->phone,
-                    "dob" => $request->dob
-                ]);
                 $otp = '123456'; // Generate OTP here
-                $mailTemp = EmailTemplate::where('slug', 'registerOTP')->first();
+                $mailTemp = EmailTemplate::where('slug', 'sendLoginOtp')->first();
                 $html = Blade::render($mailTemp->body, [
                     'otp' => $otp,
                     'validity_minutes' => env('OTP_VALIDITY_MINUTES', 10)
                 ]);
                 Mail::to($request->email)->send(new MailTemp($html, $mailTemp->subject));
-                EmailOtp::where('email', $request->email)->where('purpose', 'register')->update(['status' => '0']);
+                EmailOtp::where('email', $request->email)->where('purpose', 'login')->update(['status' => '0']);
                 EmailOtp::create([
                     "email" => $request->email,
                     "otp" => $otp,
-                    "purpose" => 'register',
+                    "purpose" => 'login',
                     "expires_at" => now()->addMinutes((int) env('OTP_VALIDITY_MINUTES', 10)),
                 ]);
                 MailLog::create([
@@ -115,21 +116,21 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
-    public function verifyOtp(Request $request)
+    public function login(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->otp)) {
+            if (isset($request->email) && isset($request->otp)) {
                 $request->validate([
-                    'token' => 'required',
+                    'email' => 'required|email',
                     'otp' => 'required',
                 ]);
-                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                $user = User::where(['email' => $request->email, 'status' => 1])->first();
                 if (!$user) {
-                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                    return response()->json(['status' => false, 'message' => 'Invalid Email'], 500);
                 }
                 $otpRecord = EmailOtp::where('email', $user->email)
                     ->where('otp', $request->otp)
-                    ->where('purpose', 'register')
+                    ->where('purpose', 'login')
                     ->where('expires_at', '>', now())
                     ->where('status', '=', '1')
                     ->latest()
@@ -144,7 +145,11 @@ class Controller
                 return response()->json([
                     'status' => true,
                     'access_token' => $token,
-                    'message' => 'Otp Verified successfully',
+                    'data' => [
+                        'user_details' => UserDetail::where('user_id', $user->id)->first(),
+                        'transactions' => Transaction::where('user_id', $user->id)->limit(10)->get(),
+                    ],
+                    'message' => 'Logged in successfully',
                 ]);
 
             } else {
@@ -155,36 +160,36 @@ class Controller
         }
     }
 
-    public function confirmPass(Request $request)
-    {
-        try {
-            if (isset($request->token)) {
-                $request->validate([
-                    'token' => 'required',
-                    "newPass" => 'required',
-                    "confirmPass" => 'required',
-                ]);
+    // public function confirmPass(Request $request)
+    // {
+    //     try {
+    //         if (isset($request->token)) {
+    //             $request->validate([
+    //                 'token' => 'required',
+    //                 "newPass" => 'required',
+    //                 "confirmPass" => 'required',
+    //             ]);
 
-                $user = User::where('remember_token', $request->token)->first();
-                if (!$user) {
-                    return response()->json(['status' => false, 'message' => 'User not found'], 404);
-                }
-                if($request->newPass !== $request->confirmPass){
-                    return response()->json(['status' => false, 'message' => 'Password and Confirm Password do not match'], 400);
-                }
-                User::where('id', $user->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass)]);
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Password created successfully',
-                ]);
+    //             $user = User::where('remember_token', $request->token)->first();
+    //             if (!$user) {
+    //                 return response()->json(['status' => false, 'message' => 'User not found'], 404);
+    //             }
+    //             if($request->newPass !== $request->confirmPass){
+    //                 return response()->json(['status' => false, 'message' => 'Password and Confirm Password do not match'], 400);
+    //             }
+    //             User::where('id', $user->id)->update(['email_verified_at' => now(), 'password' => Hash::make($request->newPass)]);
+    //             return response()->json([
+    //                 'status' => true,
+    //                 'message' => 'Password created successfully',
+    //             ]);
 
-            } else {
-                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
-            }
-        } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
+    //         } else {
+    //             return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+    //         }
+    //     } catch (\Exception $e) {
+    //         return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+    //     }
+    // }
 
     public function addAccount(Request $request)
     {
@@ -476,11 +481,12 @@ class Controller
     public function addTransaction(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id)) {
+            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id) && isset($request->transactionDate)) {
                 $request->validate([
                     'token' => 'required',
                     'account_id' => 'required|integer',
                     'transaction_type' => 'required|string',
+                    'transactionDate' => 'required',
                     'flow' => 'required|string',
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
@@ -542,6 +548,7 @@ class Controller
                     "target_account_id" => $request->target_account_id,
                     "contributor_id" => $request->contributor_id,
                     "transaction_type" => $request->transaction_type,
+                    "transactionDate" => $request->transactionDate,
                     "flow" => $request->flow,
                     "amount" => $request->amount,
                     "currency" => $request->currency,
@@ -551,6 +558,7 @@ class Controller
                     "status" => 1,
                     "reference" => $request->reference,
                 ]);
+
                 if($request->transaction_type === 'reminder'){
                     if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
                         $request->validate([
@@ -601,6 +609,7 @@ class Controller
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
+                $transaction->categoryData = Category::where(['id' => $transaction->category_id, 'status' => 1])->first();
                 if($transaction->transaction_type === 'reminder'){
                     $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
                     $transaction->reminderPayment = $reminderPayment;
@@ -630,13 +639,16 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->get();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                if($transaction->transaction_type === 'reminder'){
-                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
-                    $transaction->reminderPayment = $reminderPayment;
+                foreach ($transaction as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
                 }
                 return response()->json([
                     'status' => true,
@@ -715,12 +727,13 @@ class Controller
     public function editTransaction(Request $request)
     {
         try {
-            if (isset($request->transaction_id) && isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id)) {
+            if (isset($request->transaction_id) && isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id) && isset($request->transactionDate)) {
                 $request->validate([
                     'transaction_id' => 'required|integer',
                     'token' => 'required',
                     'account_id' => 'required|integer',
                     'transaction_type' => 'required|string',
+                    'transactionDate' => 'required',
                     'flow' => 'required|string',
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
@@ -823,6 +836,7 @@ class Controller
                     "target_account_id" => $request->target_account_id,
                     "contributor_id" => $request->contributor_id,
                     "transaction_type" => $request->transaction_type,
+                    "transactionDate" => $request->transactionDate,
                     "flow" => $request->flow,
                     "amount" => $request->amount,
                     "currency" => $request->currency,

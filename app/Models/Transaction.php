@@ -17,6 +17,8 @@ class Transaction extends Authenticatable
         'target_account_id',
         'contributor_id',
         'transaction_type',
+        'transactionDate',
+        'category_id',
         'flow',
         'amount',
         'currency',
