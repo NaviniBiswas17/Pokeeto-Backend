@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 
 Route::post('login', [Controller::class, 'login']);
+Route::post('loginGuest', [Controller::class, 'loginGuest']);
 Route::post('sendOtp', [Controller::class, 'sendOtp']);
 // Route::post('verifyOtp', [Controller::class, 'verifyOtp']);
 // Route::post('confirmPass', [Controller::class, 'confirmPass']);
@@ -26,3 +27,5 @@ Route::post('getTransaction', [Controller::class, 'getTransaction']);
 Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
 Route::post('editTransaction', [Controller::class, 'editTransaction']);
 Route::post('addKid', [Controller::class, 'addKid']);
+Route::post('addKidTask', [Controller::class, 'addKidTask']);
+
