@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Exception;
 use App\Models\Expenses;
 use App\Models\KidDetail;
+use App\Models\KidTasks;
 use Illuminate\Support\Str;
 
 class Controller
@@ -56,6 +57,51 @@ class Controller
     //         return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
     //     }
     // }
+
+    public function loginGuest(Request $request)
+    {
+         try {
+            if (isset($request->guestParam)) {
+                $request->validate([
+                    'guestParam' => 'required|regex:/^[A-Za-z]{4}[0-9]{5}$/',
+                ]);
+                $email = 'Pockeeto'.rand(00,99).time().'@pockeetoGuest.com';
+                while(User::where('email', $email)->exists()){
+                    $email = 'Pockeeto'.rand(00,99).time().'@pockeetoGuest.com';
+                }
+                $request->merge(['email' => $email]);
+                $name = explode('@', $request->email)[0];
+                $request->merge(['name' => $name]);
+
+                User::create([
+                    "name" => $request->name,
+                    "email" => $request->email,
+                    "password" =>   hash::make('12346'),
+                ]);
+                $user = User::where('email', $request->email)->first();
+                UserDetail::create([
+                    "user_id" => $user->id,
+                    "name" => $request->name,
+                    "email" => $request->email,
+                ]);
+
+                $token = $user->createToken('api-token')->plainTextToken;
+
+                User::where('id', $user->id)->update(['email_verified_at' => now(), 'remember_token' => $token]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Login Successful',
+                    'access_token' => $token,
+
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     public function sendOtp(Request $request)
     {
         try {
@@ -882,7 +928,8 @@ class Controller
         }
     }
 
-    public function addKid(Request $request){
+    public function addKid(Request $request)
+    {
         try {
             if (isset($request->token) && isset($request->name) && isset($request->relation) && isset($request->dob) && isset($request->email)) {
                 $request->validate([
@@ -930,53 +977,46 @@ class Controller
         }
     }
 
-        // public function addSpouse(Request $request){
-        // try {
-        //     if (isset($request->token) && isset($request->kid_name) && isset($request->relation) && isset($request->date_of_birth) && isset($request->email)) {
-        //         $request->validate([
-        //             'token' => 'required',
-        //             'kid_name' => 'required|string',
-        //             'relation' => 'required|string',
-        //             'date_of_birth' => 'required|date',
-        //             'email' => 'required|email',
-        //             'userName' => 'nullable|string',
-        //         ]);
-        //         $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
-        //         if (!$user) {
-        //             return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
-        //         }
-        //         $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
-        //         while(KidDetail::where('unique_Id', $uniqueId)->exists()){
-        //             $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
-        //         }
-        //         while(KidDetail::where('userName', $request->userName)->exists()){
-        //             $userName = $request->userName.rand('00','99');
-        //         }
-        //         KidDetail::create([
-        //             "parent_id" => $user->id,
-        //             "unique_Id" => $uniqueId,
-        //             "name" => $request->kid_name,
-        //             "userName" => $request->userName ?? NULL,
-        //             "relation" => $request->relation,
-        //             "date_of_birth" => $request->date_of_birth,
-        //             "email" => $request->email,
-        //             'email_verified_at'=> null,
-        //             'password' => Hash::make("kid@123"),
-        //             'remember_token' => null,
-        //             "status" => 1
-        //         ]);
-        //         return response()->json([
-        //             'status' => true,
-        //             'message' => 'Kid added successfully',
-        //         ]);
+    public function addKidTask(Request $request){
+        try {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->task_name) && isset($request->description) && isset($request->frequency) && isset($request->reward_amount)) {
+                $request->validate([
+                    'token' => 'required',
+                    "kid_id" => 'required|integer',
+                    'task_name' => 'required|string',
+                    'description' => 'nullable|string',
+                    'frequency' => 'required|string',
+                    'reward_amount' => 'required|numeric',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
+                }
 
-        //     } else {
-        //         return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
-        //     }
-        // } catch (\Exception $e) {
-        //     return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
-        // }
-    // }
+                KidTasks::create([
+                    "parent_id" => $user->id,
+                    "kid_id" => $kid->id,
+                    "task_name" => $request->task_name,
+                    "description" => $request->description ?? NULL,
+                    "frequency" => $request->frequency,
+                    "reward_amount" => $request->reward_amount,
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Task added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 }
 
 
