@@ -884,12 +884,12 @@ class Controller
 
     public function addKid(Request $request){
         try {
-            if (isset($request->token) && isset($request->kid_name) && isset($request->relation) && isset($request->date_of_birth) && isset($request->email)) {
+            if (isset($request->token) && isset($request->name) && isset($request->relation) && isset($request->dob) && isset($request->email)) {
                 $request->validate([
                     'token' => 'required',
-                    'kid_name' => 'required|string',
+                    'name' => 'required|string',
                     'relation' => 'required|string',
-                    'date_of_birth' => 'required|date',
+                    'dob' => 'required|date',
                     'email' => 'required|email',
                     'userName' => 'nullable|string',
                 ]);
@@ -901,21 +901,21 @@ class Controller
                 while(KidDetail::where('unique_Id', $uniqueId)->exists()){
                     $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
                 }
-                while(KidDetail::where('userName', $request->userName)->exists()){
-                    $userName = $request->userName.rand('00','99');
+                if(isset($request->userName)){
+                    $userNameExist = KidDetail::where('userName', $request->userName)->exists();
+                    if($userNameExist){
+                        return response()->json(['status' => false, 'message' => 'UserName Taken'], 400);
+                    }
                 }
                 KidDetail::create([
                     "parent_id" => $user->id,
                     "unique_Id" => $uniqueId,
-                    "name" => $request->kid_name,
+                    "name" => $request->name,
                     "userName" => $request->userName ?? NULL,
                     "relation" => $request->relation,
-                    "date_of_birth" => $request->date_of_birth,
+                    "date_of_birth" => $request->dob,
                     "email" => $request->email,
-                    'email_verified_at'=> null,
                     'password' => Hash::make("kid@123"),
-                    'remember_token' => null,
-                    "status" => 1
                 ]);
                 return response()->json([
                     'status' => true,
@@ -929,6 +929,54 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+
+        // public function addSpouse(Request $request){
+        // try {
+        //     if (isset($request->token) && isset($request->kid_name) && isset($request->relation) && isset($request->date_of_birth) && isset($request->email)) {
+        //         $request->validate([
+        //             'token' => 'required',
+        //             'kid_name' => 'required|string',
+        //             'relation' => 'required|string',
+        //             'date_of_birth' => 'required|date',
+        //             'email' => 'required|email',
+        //             'userName' => 'nullable|string',
+        //         ]);
+        //         $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+        //         if (!$user) {
+        //             return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+        //         }
+        //         $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+        //         while(KidDetail::where('unique_Id', $uniqueId)->exists()){
+        //             $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+        //         }
+        //         while(KidDetail::where('userName', $request->userName)->exists()){
+        //             $userName = $request->userName.rand('00','99');
+        //         }
+        //         KidDetail::create([
+        //             "parent_id" => $user->id,
+        //             "unique_Id" => $uniqueId,
+        //             "name" => $request->kid_name,
+        //             "userName" => $request->userName ?? NULL,
+        //             "relation" => $request->relation,
+        //             "date_of_birth" => $request->date_of_birth,
+        //             "email" => $request->email,
+        //             'email_verified_at'=> null,
+        //             'password' => Hash::make("kid@123"),
+        //             'remember_token' => null,
+        //             "status" => 1
+        //         ]);
+        //         return response()->json([
+        //             'status' => true,
+        //             'message' => 'Kid added successfully',
+        //         ]);
+
+        //     } else {
+        //         return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+        //     }
+        // } catch (\Exception $e) {
+        //     return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        // }
+    // }
 }
 
 
