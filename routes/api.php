@@ -28,4 +28,9 @@ Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
 Route::post('editTransaction', [Controller::class, 'editTransaction']);
 Route::post('addKid', [Controller::class, 'addKid']);
 Route::post('addKidTask', [Controller::class, 'addKidTask']);
+Route::post('getKidTask', [Controller::class, 'getKidTask']);
+Route::post('addKidGoal', [Controller::class, 'addKidGoal']);
+Route::post('getKidGoal', [Controller::class, 'getKidGoal']);
+Route::post('getKidDetailList', [Controller::class, 'getKidDetailList']);
+
 
