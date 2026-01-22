@@ -1122,5 +1122,26 @@ class Controller
         }
     }
 
+    public function getKidDetailList(Request $request)
+    {
+        try {
+            if(isset($request->token)){
+                $request->validate([
+                    'token' => 'required',
+                ]);
+            }
+            $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                 
+            $kidDetails = KidDetail::select(['id', 'name', 'email', 'relation'])->where(['parent_id' => $user->id])->get();    
 
+            return response()->json([
+                'status' => true,
+                'message' => 'Kid Details fetched successfully',
+                'data' => $kidDetails,
+            ]);
+
+        } catch (\Throwable $th) {
+            return response()->json(['status' => false, 'message' => $th->getMessage()], 500);
+        }
+    }
 }
