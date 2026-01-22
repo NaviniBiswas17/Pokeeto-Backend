@@ -23,7 +23,8 @@ use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Exception;
 use App\Models\Expenses;
 use App\Models\KidDetail;
-use App\Models\KidTasks;
+use App\Models\KidGoal;
+use App\Models\KidTask;
 use Illuminate\Support\Str;
 
 class Controller
@@ -977,7 +978,8 @@ class Controller
         }
     }
 
-    public function addKidTask(Request $request){
+    public function addKidTask(Request $request)
+    {
         try {
             if (isset($request->token) && isset($request->kid_id) && isset($request->task_name) && isset($request->description) && isset($request->frequency) && isset($request->reward_amount)) {
                 $request->validate([
@@ -997,7 +999,7 @@ class Controller
                 return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
 
-                KidTasks::create([
+                KidTask::create([
                     "parent_id" => $user->id,
                     "kid_id" => $kid->id,
                     "task_name" => $request->task_name,
@@ -1017,6 +1019,6 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+ 
+    
 }
-
-
