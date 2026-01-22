@@ -1060,4 +1060,35 @@ class Controller
         }
     }
 
+    public function getKidTask(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->kid_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    "kid_id" => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
+                }
+                $tasks = KidTask::where(['kid_id' => $kid->id])->get();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Tasks fetched successfully',
+                    'data' => $tasks,
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
 }
