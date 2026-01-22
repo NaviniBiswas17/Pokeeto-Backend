@@ -1020,5 +1020,44 @@ class Controller
         }
     }
  
-    
+    public function addKidGoal(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->goal_name) && isset($request->target_amount) && isset($request->target_date)) {
+                $request->validate([
+                    'token' => 'required',
+                    "kid_id" => 'required|integer',
+                    'goal_name' => 'required|string',
+                    'target_amount' => 'required|numeric',
+                    'target_date' => 'required|date',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
+                }
+                KidGoal::create([
+                    "parent_id" => $user->id,
+                    "kid_id" => $kid->id,
+                    "goal_name" => $request->goal_name,
+                    "target_amount" => $request->target_amount,
+                    "target_date" => $request->target_date,
+                ]);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Goal added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
 }
