@@ -25,6 +25,7 @@ use App\Models\Expenses;
 use App\Models\KidDetail;
 use App\Models\KidGoal;
 use App\Models\KidTask;
+use App\Models\KidTransaction;
 use App\Models\KidAccount;
 use Illuminate\Support\Str;
 
@@ -972,6 +973,7 @@ class Controller
                         return response()->json(['status' => false, 'message' => 'UserName Taken'], 400);
                     }
                 }
+
                 KidDetail::create([
                     "parent_id" => $user->id,
                     "unique_Id" => $uniqueId,
@@ -1213,7 +1215,7 @@ class Controller
                 if (!$kid) {
                 return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
-                $tasks = KidTask::where(['kid_id' => $kid->id])->get();
+                $tasks = KidTask::where(['kid_id' => $kid->id, 'status' => '1'])->get();
                 return response()->json([
                     'status' => true,
                     'message' => 'Tasks fetched successfully',
@@ -1377,8 +1379,6 @@ class Controller
         }
     }
 
-    
-
     public function getKidGoal(Request $request)
     {
         try {
@@ -1395,7 +1395,7 @@ class Controller
                 if (!$kid) {
                 return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
-                $goals = KidGoal::where(['kid_id' => $kid->id])->get();
+                $goals = KidGoal::where(['kid_id' => $kid->id, 'status' => '1'])->get();
                 return response()->json([
                     'status' => true,
                     'message' => 'Goals fetched successfully',
@@ -1425,7 +1425,7 @@ class Controller
                 if (!$kid) {
                 return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
-                $goal = KidGoal::where(['kid_id' => $kid->id, 'id' => $request->goal_id])->first();
+                $goal = KidGoal::where(['kid_id' => $kid->id, 'id' => $request->goal_id, 'status' => '1'])->first();
                 return response()->json([
                     'status' => true,
                     'message' => 'Goals fetched successfully',
@@ -1469,18 +1469,15 @@ class Controller
     public function addKidTransaction(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->category_id) && isset($request->transactionDate)) {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->transactionDate)) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
+                    'kid_id' => 'required|integer',
                     'transaction_type' => 'required|string',
                     'transactionDate' => 'required',
                     'flow' => 'required|string',
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
-                    'category_id'=> 'required|integer',
-                    'target_account_id' => 'nullable|integer',
-                    'contributor_id' => 'nullable|integer',
                     'description' => 'nullable|string',
                     'reference' => 'nullable|string',
                 ]);
@@ -1488,33 +1485,37 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                if($request->transaction_type === 'transfer'){
-                    if(isset($request->target_account_id)){
-                        $targetAccount = Account::where(['id' => $request->target_account_id, 'status' => 1])->first();
-                        if($targetAccount){
-                            $sourceAccount = Account::where(['id' => $request->account_id, 'status' => 1])->first();
-                            if($sourceAccount){
-                                if($sourceAccount->balance < $request->amount){
-                                    return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
-                                }else{
-                                    $sourceAccount->balance -= $request->amount;
-                                    $sourceAccount->save();
-                                    $targetAccount->balance += $request->amount;
-                                    $targetAccount->save();
-                                }
-                            }else{
-                                return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
-                            }
-                        }else{
-                            return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
-                        }
-                    }else{
-                        return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
-                    }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                    return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
                 }
+                // if($request->transaction_type === 'transfer'){
+                //     if(isset($request->target_account_id)){
+                //         $targetAccount = Account::where(['id' => $request->target_account_id, 'status' => 1])->first();
+                //         if($targetAccount){
+                //             $sourceAccount = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                //             if($sourceAccount){
+                //                 if($sourceAccount->balance < $request->amount){
+                //                     return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
+                //                 }else{
+                //                     $sourceAccount->balance -= $request->amount;
+                //                     $sourceAccount->save();
+                //                     $targetAccount->balance += $request->amount;
+                //                     $targetAccount->save();
+                //                 }
+                //             }else{
+                //                 return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
+                //             }
+                //         }else{
+                //             return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
+                //         }
+                //     }else{
+                //         return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
+                //     }
+                // }
 
                 if($request->transaction_type === 'income' || $request->transaction_type === 'expense'){
-                    $account = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
                     if($account){
                         if($request->transaction_type === 'income'){
                             $account->balance += $request->amount;
@@ -1530,47 +1531,43 @@ class Controller
                         return response()->json(['status' => false, 'message' => 'Account not found'], 404);
                     }
                 }
-                $transaction = Transaction::create([
-                    "user_id" => $user->id,
-                    "account_id" => $request->account_id,
-                    "target_account_id" => $request->target_account_id,
-                    "contributor_id" => $request->contributor_id,
+                $kidtransaction = KidTransaction::create([
+                    "parent_id" => $user->id,
+                    "kid_id" => $request->kid_id,
                     "transaction_type" => $request->transaction_type,
                     "transactionDate" => $request->transactionDate,
                     "flow" => $request->flow,
                     "amount" => $request->amount,
                     "currency" => $request->currency,
-                    "category_id" => $request->category_id,
                     "description" => $request->description,
-                    "processStatus" => $request->transaction_type === 'reminder' ? 'pending' : 'completed',
                     "status" => 1,
-                    "reference" => $request->reference,
+                    "reference" => $request->reference ?? NULL,
                 ]);
 
-                if($request->transaction_type === 'reminder'){
-                    if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
-                        $request->validate([
-                            'reminder_date' => 'required|date',
-                            'reminder_time' => 'required',
-                            'recurrence' => 'required|string',
-                            'notify_before_minutes' => 'required|integer',
-                        ]);
-                        ReminderPayment::create([
-                            "transaction_id" => $transaction->id,
-                            "reminder_date" => $request->reminder_date,
-                            "reminder_time" => $request->reminder_time,
-                            "recurrence" => $request->recurrence,
-                            "notify_before_minutes" => $request->notify_before_minutes,
-                            "status" => 1
-                        ]);
-                    }else{
-                        return response()->json(['status' => false, 'message' => 'Empty Parameters for reminder transaction'], 400);
-                    }
-                }
+                // if($request->transaction_type === 'reminder'){
+                //     if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
+                //         $request->validate([
+                //             'reminder_date' => 'required|date',
+                //             'reminder_time' => 'required',
+                //             'recurrence' => 'required|string',
+                //             'notify_before_minutes' => 'required|integer',
+                //         ]);
+                //         ReminderPayment::create([
+                //             "transaction_id" => $transaction->id,
+                //             "reminder_date" => $request->reminder_date,
+                //             "reminder_time" => $request->reminder_time,
+                //             "recurrence" => $request->recurrence,
+                //             "notify_before_minutes" => $request->notify_before_minutes,
+                //             "status" => 1
+                //         ]);
+                //     }else{
+                //         return response()->json(['status' => false, 'message' => 'Empty Parameters for reminder transaction'], 400);
+                //     }
+                // }
 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Transaction added successfully',
+                    'message' => 'Kid Transaction added successfully',
                 ]);
 
             } else {
@@ -1581,26 +1578,21 @@ class Controller
         }
     }
 
-    public function getKidTransaction(Request $request)
+    public function getKidTransactionList(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->transaction_id)) {
+            if (isset($request->token) && isset($request->kid_id)) {
                 $request->validate([
                     'token' => 'required',
-                    'transaction_id' => 'required|integer',
+                    'kid_id' => 'required|integer',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = KidTransaction::where(['kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->get();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
-                }
-                $transaction->categoryData = Category::where(['id' => $transaction->category_id, 'status' => 1])->first();
-                if($transaction->transaction_type === 'reminder'){
-                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
-                    $transaction->reminderPayment = $reminderPayment;
                 }
                 return response()->json([
                     'status' => true,
@@ -1616,28 +1608,21 @@ class Controller
         }
     }
 
-    public function getKidTransactionList(Request $request)
+    public function getKidTransactionDetail(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id)) {
+            if (isset($request->token) && isset($request->transaction_id)) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
+                    'transaction_id' => 'required|integer',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->get();
+                $transaction = KidTransaction::where(['id' => $request->transaction_id, 'parent_id' => $user->id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
-                }
-                foreach ($transaction as $item) {
-                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
-                    if($item->transaction_type === 'reminder'){
-                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
-                        $item->reminderPayment = $reminderPayment;
-                    }
                 }
                 return response()->json([
                     'status' => true,
@@ -1665,15 +1650,9 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = KidTransaction::where(['id' => $request->transaction_id, 'parent_id' => $user->id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
-                }
-                if($transaction->transaction_type === 'reminder'){
-                    $reminderPayment = ReminderPayment::where(['transaction_id' => $transaction->id, 'status' => 1])->first();
-                    if($reminderPayment){
-                        $reminderPayment->update(['status' => 0]);
-                    }
                 }
                 if($transaction->transaction_type === 'transfer'){
                     $sourceAccount = Account::where(['id' => $transaction->account_id, 'status' => 1])->first();
@@ -1872,6 +1851,3 @@ class Controller
     }
     
 }
-
-
- 

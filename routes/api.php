@@ -52,6 +52,6 @@ Route::post('getKidGoalDetails', [Controller::class, 'getKidGoalDetails']);
 
 Route::post('getKidTransactionList', [Controller::class, 'getKidTransactionList']);
 Route::post('addKidTransaction', [Controller::class, 'addKidTransaction']);
-Route::post('getKidTransaction', [Controller::class, 'getKidTransaction']);
+Route::post('getKidTransactionDetail', [Controller::class, 'getKidTransactionDetail']);
 Route::post('deleteKidTransaction', [Controller::class, 'deleteKidTransaction']);
 Route::post('editKidTransaction', [Controller::class, 'editKidTransaction']);
