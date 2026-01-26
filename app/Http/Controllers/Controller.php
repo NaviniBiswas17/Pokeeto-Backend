@@ -27,7 +27,11 @@ use App\Models\KidGoal;
 use App\Models\KidTask;
 use App\Models\KidTransaction;
 use App\Models\KidAccount;
+use App\Models\FriendInvite;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
 
 class Controller
 {
@@ -212,11 +216,93 @@ class Controller
                 return response()->json([
                     'status' => true,
                     'access_token' => $token,
-                    'data' => [
-                        'user_details' => UserDetail::where('user_id', $user->id)->first(),
-                        'transactions' => Transaction::where('user_id', $user->id)->limit(10)->get(),
-                    ],
                     'message' => 'Logged in successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+      public function dashboard(Request $request)
+    {
+        try {
+           if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $accounts = Account::where('user_id', $user->id)->get();
+                foreach($accounts as $acc)
+                {
+                    $acc->transData7Days = Transaction::where([
+                            'user_id'    => $user->id,
+                            'account_id' => $acc->id
+                        ])
+                        ->where('transactionDate', '>=', Carbon::now()->subDays(7))
+                        ->select(
+                            DB::raw('DATE(transactionDate) as date'),
+                            DB::raw("SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END) as total_income"),
+                            DB::raw("SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) as total_expense")
+                        )
+                        ->groupBy(DB::raw('DATE(transactionDate)'))
+                        ->orderBy('date', 'asc')
+                        ->get();
+
+
+                    $acc->transData30Days = Transaction::where(['transactions.user_id'=> $user->id,'account_id'=>$acc->id])
+                        ->where('transactions.transactionDate', '>=', Carbon::now()->subDays(30))
+                        ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                        ->select(
+                            'categories.name as category_name',
+                            DB::raw('SUM(transactions.amount) as total_amount'),
+                            DB::raw("SUM(CASE WHEN transactions.transaction_type = 'income' THEN transactions.amount ELSE 0 END) as total_income"),
+                            DB::raw("SUM(CASE WHEN transactions.transaction_type = 'expense' THEN transactions.amount ELSE 0 END) as total_expense")
+                        )
+                        ->groupBy('categories.name')
+                        ->orderBy('categories.name', 'asc')
+                        ->get();
+
+
+                }
+
+                $transactionDash = Transaction::where(['user_id'=> $user->id])->limit(5)->get();
+                foreach($transactionDash as $trans)
+                {
+                    $categoryData = Category::where('id', $trans->category_id)->first();
+                    $trans->categoryData = $categoryData;
+                    $accountData = Account::where('id', $trans->account_id)->first();
+                    $trans->accountData = $accountData;
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'data' => [
+                        'accounts'=>$accounts,
+                        'transactions' => $transactionDash,
+                        'user_details' => UserDetail::where('user_id', $user->id)->first(),
+                        'kids'=>KidDetail::where('kid_details.parent_id', $user->id)
+                            ->leftJoin('kid_accounts', function ($join) {
+                                $join->on('kid_details.id', '=', 'kid_accounts.kid_id')
+                                    ->where('kid_accounts.is_primary', 1);
+                            })
+                            ->select(
+                                'kid_details.*',
+                                'kid_accounts.id as account_id',
+                                'kid_accounts.account_name',
+                                'kid_accounts.default_currency',
+                                'kid_accounts.balance'
+                            )
+                            ->get(),
+                        'reminders'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'reminder'])->limit(5)->get(),
+                    ],
+                    'message' => 'Dashboard Fetched successfully',
                 ]);
 
             } else {
@@ -349,24 +435,55 @@ class Controller
     public function addContributor(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->contributor_id) && isset($request->role)) {
+            if (isset($request->token) && isset($request->account_id) && isset($request->contributor_email) && isset($request->role)) {
                 $request->validate([
                     'token' => 'required',
                     'account_id' => 'required|integer',
-                    'contributor_id' => 'required|integer',
+                    'contributor_email' => 'required|email',
                     'role' => 'required|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $contributorUser = User::where(['id' => $request->contributor_id, 'status' => 1])->first();
-                if (!$contributorUser) {
-                    return response()->json(['status' => false, 'message' => 'Contributor User not found'], 404);
+                $contributorUser = User::where(['email' => $request->contributor_email, 'status' => 1])->first();
+                 if (!$contributorUser) {
+                    $contributor_name = explode('@', $request->contributor_email)[0];
+                    $request->merge(['contributor_name' => $contributor_name]);
+
+                    User::create([
+                        "name" => $request->contributor_name,
+                        "email" => $request->contributor_email,
+                        "password" =>   hash::make('12346'),
+                    ]);
+                    $contributorUser = User::where('email', $request->contributor_email)->first();
+                    UserDetail::create([
+                        "user_id" => $contributorUser->id,
+                        "name" => $request->contributor_name,
+                        "email" => $request->contributor_email,
+                    ]);
+                    Account::create([
+                        "user_id" => $contributorUser->id,
+                        "account_name" => 'Main Account',
+                        "default_currency" => 'INR',
+                        "balance" => 0,
+                        "is_primary" => '1',
+                        'last_login_at' => now()
+                    ]);
                 }
+
+                $mailTemp = EmailTemplate::where('slug', 'account-contributor-invite')->first();
+                $html = Blade::render($mailTemp->body);
+                Mail::to($request->email)->send(new MailTemp($html, $mailTemp->subject));
+                MailLog::create([
+                    'to_email' => $request->email,
+                    'subject' => $mailTemp->subject,
+                    'body' => $html,
+                    'sent_at' => now(),
+                ]);
                 AccountContributor::create([
                     "account_id" => $request->account_id,
-                    "contributor_id" => $request->contributor_id,
+                    "contributor_id" => $contributorUser->id,
                     "user_id" => $user->id,
                     "role" => $request->role,
                     "status" => 1
@@ -429,7 +546,7 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
                 $categories = Category::where('status', operator: '1')->get();
-                $userCategories = UserCategory::where(['user_id' => $user->id, 'status' => 1])->get();
+                $userCategories = UserCategory::where(['user_id' => $user->id])->get();
                 return response()->json([
                     'status' => true,
                     'message' => 'User Specific category list fetched successfully',
@@ -535,6 +652,144 @@ class Controller
                 return response()->json([
                     'status' => true,
                     'message' => 'User Setting updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function inviteFriend(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->invitee_email)) {
+                $request->validate([
+                    'token' => 'required',
+                    'invitee_email' => 'required|email',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+
+                FriendInvite::create([
+                    "inviter_user_id" => $user->id,
+                    "invitee_email" => $request->invitee_email,
+                    "invite_token"=> Str::uuid(),
+                    "processStatus"=>"pending",
+                    "status" => 1
+                ]);
+
+                $mailTemp = EmailTemplate::where('slug', 'friend-invite')->first();
+                $html = Blade::render($mailTemp->body);
+                Mail::to($request->invitee_email)->send(new MailTemp($html, $mailTemp->subject));
+                MailLog::create([
+                    'to_email' => $request->invitee_email,
+                    'subject' => $mailTemp->subject,
+                    'body' => $html,
+                    'sent_at' => now(),
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Invitation sent successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function inviteFriendList(Request $request)
+    {
+         try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $invitations = FriendInvite::where(['inviter_user_id' => $user->id])->get();
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Invitations Fetched successfully',
+                    'data'=> $invitations
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function editInviteFriend(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->invite_id) && isset($request->invitee_email)) {
+                $request->validate([
+                    'token' => 'required',
+                    'invite_id' => 'required|integer',
+                    'invitee_email' => 'required|email',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                FriendInvite::where(['id' => $request->invite_id, 'inviter_user_id' => $user->id])->update([
+                    "invitee_email" => $request->invitee_email,
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Invitation updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function resendInviteFriend(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->invite_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'invite_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $invite = FriendInvite::where(['id' => $request->invite_id, 'inviter_user_id' => $user->id])->first();
+                if(!$invite){
+                    return response()->json(['status' => false, 'message' => 'Invitation not found'], 404);
+                }
+
+                $mailTemp = EmailTemplate::where('slug', 'friend-invite')->first();
+                $html = Blade::render($mailTemp->body);
+                Mail::to($invite->invitee_email)->send(new MailTemp($html, $mailTemp->subject));
+                MailLog::create([
+                    'to_email' => $invite->invitee_email,
+                    'subject' => $mailTemp->subject,
+                    'body' => $html,
+                    'sent_at' => now(),
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Invitation resent successfully',
                 ]);
 
             } else {
@@ -706,21 +961,170 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->get();
-                if(!$transaction){
+
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+
+               $currentAccount->list->transData7Days = Transaction::where([
+                    'account_id' => $request->account_id,
+                    'user_id'    => $user->id,
+                    'status'     => 1
+                ])
+                ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
+                ->orderBy('transactionDate', 'desc')
+                ->get();
+                if(!$currentAccount->list->transData7Days){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                foreach ($transaction as $item) {
+                foreach ($currentAccount->list->transData7Days as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
                     }
                 }
+
+
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])
+                    ->orderBy('transactionDate', 'desc')
+                    ->get();
+                if(!$currentAccount->list->transDatacurrentMonth){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                foreach ($currentAccount->list->transDatacurrentMonth as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
+                }
+
+                $currentAccount->stats->transData7Days = Transaction::where([
+                        'user_id'    => $user->id,
+                        'account_id' => $currentAccount->id
+                    ])
+                    ->where('transactionDate', '>=', Carbon::now()->subDays(7))
+                    ->select(
+                        DB::raw('DATE(transactionDate) as date'),
+                        DB::raw("SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy(DB::raw('DATE(transactionDate)'))
+                    ->orderBy('date', 'desc')
+                    ->get();
+
+
+               $currentAccount->stats->transDatacurrentMonth = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])
+                    ->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.transaction_type = 'income' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.transaction_type = 'expense' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+
                 return response()->json([
                     'status' => true,
                     'message' => 'Transaction fetched successfully',
-                    'data' => $transaction
+                    'data' => $currentAccount
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getTransactionListCustom(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'start_date' => 'required|date',
+                    'end_date' => 'required|date',
+                    'type' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+                if($request->type === 'list'){
+                   $currentAccount->list->custom = Transaction::where([
+                            'account_id' => $request->account_id,
+                            'user_id'    => $user->id,
+                            'status'     => 1
+                        ])
+                        ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
+                        ->orderBy('transactionDate', 'desc')
+                        ->get();
+
+                    if ($currentAccount->list->custom->isEmpty()) {
+                        return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                    }
+
+                    foreach ($currentAccount->list->custom as $item) {
+                        $item->categoryData = Category::where([
+                            'id'     => $item->category_id,
+                            'status' => 1
+                        ])->first();
+
+                        if ($item->transaction_type === 'reminder') {
+                            $item->reminderPayment = ReminderPayment::where([
+                                'transaction_id' => $item->id,
+                                'status'         => 1
+                            ])->first();
+                        }
+                    }
+                }elseif($request->type === 'stats')
+                {
+                   $currentAccount->stats->custom = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])
+                    ->whereBetween('transactions.transactionDate', [
+                        $request->start_date,
+                        $request->end_date
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.transaction_type = 'income' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.transaction_type = 'expense' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+                }else{
+                    return response()->json(['status' => false, 'message' => 'Please Select a Type'], 400);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction list fetched successfully',
+                    'data' => $currentAccount
                 ]);
 
             } else {
@@ -1030,8 +1434,6 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
                 KidDetail::where(['id' => $request->kid_id])->update([
-                    "parent_id" => $user->id,
-                    "unique_Id" => $uniqueId,
                     "name" => $request->name,
                     "userName" => $request->userName ?? NULL,
                     "relation" => $request->relation,
@@ -1067,6 +1469,7 @@ class Controller
                 if (!$kid) {
                     return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
+                $kid->account = KidAccount::where(['kid_id' => $kid->id, 'is_primary' => 1])->first(['id', 'account_name', 'default_currency', 'balance']);
                 return response()->json([
                     'status' => true,
                     'message' => 'Kid details fetched successfully',
@@ -1263,7 +1666,7 @@ class Controller
     }
 
 
- 
+
     public function addKidGoal(Request $request)
     {
         try {
@@ -1450,8 +1853,11 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $kidDetails = KidDetail::select(['id', 'name', 'email', 'relation'])->where(['parent_id' => $user->id])->get();    
-    
+                $kidDetails = KidDetail::select(['id', 'name', 'email', 'relation'])->where(['parent_id' => $user->id])->get();
+
+                foreach($kidDetails as $kid){
+                    $kid->account = KidAccount::where(['kid_id' => $kid->id, 'is_primary' => 1])->first(['id', 'account_name', 'default_currency', 'balance']);
+                }
                 return response()->json([
                     'status' => true,
                     'message' => 'Kid Details fetched successfully',
@@ -1516,12 +1922,14 @@ class Controller
                 }
 
                 if($request->transaction_type === 'expense'){
+                    $source_account_id = Account::where(['is_primary' => '1', 'status' => 1])->first();
+                    $request->merge(['source_account_id' => $source_account_id->id]);
                     $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
                     if($account){
                         if($account->balance < $request->amount){
                             return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
                         }else{
-                            $account->balance -= $request->amount;  
+                            $account->balance -= $request->amount;
                         }
                         $account->save();
                     }else{
@@ -1531,7 +1939,7 @@ class Controller
                 $kidtransaction = KidTransaction::create([
                     "parent_id" => $user->id,
                     "kid_id" => $request->kid_id,
-                    "parent_account_id" => $request->source_account_id ?? NULL,
+                    "parent_account_id" => $request->source_account_id,
                     "transaction_type" => $request->transaction_type,
                     "transactionDate" => $request->transactionDate,
                     "flow" => $request->flow,
@@ -1663,7 +2071,7 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
-    
+
     public function editKidTransaction(Request $request)
     {
         try {
@@ -1742,7 +2150,7 @@ class Controller
                         if($account->balance < $request->amount){
                             return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
                         }else{
-                            $account->balance -= $request->amount;  
+                            $account->balance -= $request->amount;
                         }
                         $account->save();
                     }else{
@@ -1775,5 +2183,5 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
-    
+
 }

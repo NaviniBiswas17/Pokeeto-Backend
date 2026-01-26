@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 
 Route::post('login', [Controller::class, 'login']);
+Route::post('dashboard', [Controller::class, 'dashboard']);
 Route::post('loginGuest', [Controller::class, 'loginGuest']);
 Route::post('sendOtp', [Controller::class, 'sendOtp']);
 // Route::post('verifyOtp', [Controller::class, 'verifyOtp']);
@@ -25,11 +26,19 @@ Route::post('addUserCategory', [Controller::class, 'addUserCategory']);
 Route::post('getUserDetails', [Controller::class, 'getUserDetails']);
 Route::post('updateUserSetting', [Controller::class, 'updateUserSetting']);
 
+Route::post('inviteFriend', [Controller::class, 'inviteFriend']);
+Route::post('editInviteFriend', [Controller::class, 'editInviteFriend']);
+Route::post('resendInviteFriend', [Controller::class, 'resendInviteFriend']);
+Route::post('inviteFriendList', [Controller::class, 'inviteFriendList']);
+
 Route::post('getTransactionList', [Controller::class, 'getTransactionList']);
+Route::post('getTransactionListCustom', [Controller::class, 'getTransactionListCustom']);
 Route::post('addTransaction', [Controller::class, 'addTransaction']);
 Route::post('getTransaction', [Controller::class, 'getTransaction']);
 Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
 Route::post('editTransaction', [Controller::class, 'editTransaction']);
+
+
 
 Route::post('addKid', [Controller::class, 'addKid']);
 Route::post('editKid', [Controller::class, 'editKid']);
