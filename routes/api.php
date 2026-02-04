@@ -39,6 +39,11 @@ Route::post('getTransaction', [Controller::class, 'getTransaction']);
 Route::post('deleteTransaction', [Controller::class, 'deleteTransaction']);
 Route::post('editTransaction', [Controller::class, 'editTransaction']);
 
+Route::post('getTransferList', [Controller::class, 'getTransferList']);
+Route::post('getTransferListCustom', [Controller::class, 'getTransferListCustom']);
+Route::post('getReminderList', [Controller::class, 'getReminderList']);
+Route::post('getReminderListCustom', [Controller::class, 'getReminderListCustom']);
+
 
 
 Route::post('addKid', [Controller::class, 'addKid']);

@@ -609,6 +609,9 @@ class Controller
                     'token' => 'required',
                     'name' => 'required|string',
                     'description' => 'required|string',
+                    'is_income' => 'required|boolean',
+                    'is_expense' => 'required|boolean',
+                    'nature' => 'required|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
@@ -618,6 +621,9 @@ class Controller
                     "user_id" => $user->id,
                     "name" => $request->name,
                     "description" => $request->description,
+                    "is_income" => $request->is_income,
+                    "is_expense" => $request->is_expense,
+                    "nature" => $request->nature,
                 ]);
                 return response()->json([
                     'status' => true,
@@ -919,8 +925,9 @@ class Controller
                 ]);
 
                 if($request->transaction_type === 'reminder'){
-                    if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
+                    if (isset($request->name) && isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
                         $request->validate([
+                            'name'=>'required|string',
                             'reminder_date' => 'required|date',
                             'reminder_time' => 'required',
                             'recurrence' => 'required|string',
@@ -928,6 +935,7 @@ class Controller
                         ]);
                         ReminderPayment::create([
                             "transaction_id" => $transaction->id,
+                            'reminder_name'=>$request->name,
                             "reminder_date" => $request->reminder_date,
                             "reminder_time" => $request->reminder_time,
                             "recurrence" => $request->recurrence,
@@ -1007,7 +1015,7 @@ class Controller
                     'account_id' => $request->account_id,
                     'user_id'    => $user->id,
                     'status'     => 1
-                ])
+                ])->whereIn('transaction_type', ['income', 'expense'])
                 ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
                 ->orderBy('transactionDate', 'desc')
                 ->get();
@@ -1026,7 +1034,7 @@ class Controller
                  $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
-                    ])
+                    ])->whereIn('transaction_type', ['income', 'expense'])
                     ->orderBy('transactionDate', 'desc')
                     ->get();
                 if(!$currentAccount->list->transDatacurrentMonth){
@@ -1043,7 +1051,7 @@ class Controller
                 $currentAccount->stats->transData7Days = Transaction::where([
                         'user_id'    => $user->id,
                         'account_id' => $currentAccount->id
-                    ])
+                    ])->whereIn('transaction_type', ['income', 'expense'])
                     ->where('transactionDate', '>=', Carbon::now()->subDays(7))
                     ->select(
                         DB::raw('DATE(transactionDate) as date'),
@@ -1058,7 +1066,7 @@ class Controller
                $currentAccount->stats->transDatacurrentMonth = Transaction::where([
                         'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
-                    ])
+                    ])->whereIn('transaction_type', ['income', 'expense'])
                     ->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
@@ -1069,6 +1077,210 @@ class Controller
                         DB::raw('SUM(transactions.amount) as total_amount'),
                         DB::raw("SUM(CASE WHEN transactions.transaction_type = 'income' THEN transactions.amount ELSE 0 END) as total_income"),
                         DB::raw("SUM(CASE WHEN transactions.transaction_type = 'expense' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction fetched successfully',
+                    'data' => $currentAccount
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+     public function getTransferList(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+
+               $currentAccount->list->transData7Days = Transaction::where([
+                    'account_id' => $request->account_id,
+                    'user_id'    => $user->id,
+                    'status'     => 1
+                ])->whereIn('transaction_type', ['transfer'])
+                ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
+                ->orderBy('transactionDate', 'desc')
+                ->get();
+                if(!$currentAccount->list->transData7Days){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                foreach ($currentAccount->list->transData7Days as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
+                }
+
+
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])->whereIn('transaction_type', ['transfer'])
+                    ->orderBy('transactionDate', 'desc')
+                    ->get();
+                if(!$currentAccount->list->transDatacurrentMonth){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                foreach ($currentAccount->list->transDatacurrentMonth as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
+                }
+
+                $currentAccount->stats->transData7Days = Transaction::where([
+                        'user_id'    => $user->id,
+                        'account_id' => $currentAccount->id
+                    ])->whereIn('transaction_type', ['transfer'])
+                    ->where('transactionDate', '>=', Carbon::now()->subDays(7))
+                    ->select(
+                        DB::raw('DATE(transactionDate) as date'),
+                        DB::raw("SUM(CASE WHEN flow = 'credit' THEN amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN flow = 'debit' THEN amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy(DB::raw('DATE(transactionDate)'))
+                    ->orderBy('date', 'desc')
+                    ->get();
+
+
+               $currentAccount->stats->transDatacurrentMonth = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])->whereIn('transaction_type', ['transfer'])
+                    ->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction fetched successfully',
+                    'data' => $currentAccount
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function getReminderList(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+
+               $currentAccount->list->transData7Days = Transaction::where([
+                    'account_id' => $request->account_id,
+                    'user_id'    => $user->id,
+                    'status'     => 1
+                ])->whereIn('transaction_type', ['reminder'])
+                ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
+                ->orderBy('transactionDate', 'desc')
+                ->get();
+                if(!$currentAccount->list->transData7Days){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                foreach ($currentAccount->list->transData7Days as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
+                }
+
+
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])->whereIn('transaction_type', ['reminder'])
+                    ->orderBy('transactionDate', 'desc')
+                    ->get();
+                if(!$currentAccount->list->transDatacurrentMonth){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                foreach ($currentAccount->list->transDatacurrentMonth as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
+                    }
+                }
+
+                $currentAccount->stats->transData7Days = Transaction::where([
+                        'user_id'    => $user->id,
+                        'account_id' => $currentAccount->id
+                    ])->whereIn('transaction_type', ['reminder'])
+                    ->where('transactionDate', '>=', Carbon::now()->subDays(7))
+                    ->select(
+                        DB::raw('DATE(transactionDate) as date'),
+                        DB::raw("SUM(CASE WHEN flow = 'credit' THEN amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN flow = 'debit' THEN amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy(DB::raw('DATE(transactionDate)'))
+                    ->orderBy('date', 'desc')
+                    ->get();
+
+
+               $currentAccount->stats->transDatacurrentMonth = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])->whereIn('transaction_type', ['reminder'])
+                    ->whereBetween('transactionDate', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
                     )
                     ->groupBy('categories.name')
                     ->orderBy('categories.name', 'desc')
@@ -1112,7 +1324,7 @@ class Controller
                             'account_id' => $request->account_id,
                             'user_id'    => $user->id,
                             'status'     => 1
-                        ])
+                        ])->whereIn('transaction_type', ['income', 'expense'])
                         ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
                         ->orderBy('transactionDate', 'desc')
                         ->get();
@@ -1139,7 +1351,7 @@ class Controller
                    $currentAccount->stats->custom = Transaction::where([
                         'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
-                    ])
+                    ])->whereIn('transaction_type', ['income', 'expense'])
                     ->whereBetween('transactions.transactionDate', [
                         $request->start_date,
                         $request->end_date
@@ -1171,6 +1383,172 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+
+    public function getTransferListCustom(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'start_date' => 'required|date',
+                    'end_date' => 'required|date',
+                    'type' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+                if($request->type === 'list'){
+                   $currentAccount->list->custom = Transaction::where([
+                            'account_id' => $request->account_id,
+                            'user_id'    => $user->id,
+                            'status'     => 1
+                        ])->whereIn('transaction_type', ['transfer'])
+                        ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
+                        ->orderBy('transactionDate', 'desc')
+                        ->get();
+
+                    if ($currentAccount->list->custom->isEmpty()) {
+                        return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                    }
+
+                    foreach ($currentAccount->list->custom as $item) {
+                        $item->categoryData = Category::where([
+                            'id'     => $item->category_id,
+                            'status' => 1
+                        ])->first();
+
+                        if ($item->transaction_type === 'reminder') {
+                            $item->reminderPayment = ReminderPayment::where([
+                                'transaction_id' => $item->id,
+                                'status'         => 1
+                            ])->first();
+                        }
+                    }
+                }elseif($request->type === 'stats')
+                {
+                   $currentAccount->stats->custom = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])->whereIn('transaction_type', ['transfer'])
+                    ->whereBetween('transactions.transactionDate', [
+                        $request->start_date,
+                        $request->end_date
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+                }else{
+                    return response()->json(['status' => false, 'message' => 'Please Select a Type'], 400);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction list fetched successfully',
+                    'data' => $currentAccount
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function getReminderListCustom(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'start_date' => 'required|date',
+                    'end_date' => 'required|date',
+                    'type' => 'required|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount->list = new \stdClass();
+                $currentAccount->stats = new \stdClass();
+                if($request->type === 'list'){
+                   $currentAccount->list->custom = Transaction::where([
+                            'account_id' => $request->account_id,
+                            'user_id'    => $user->id,
+                            'status'     => 1
+                        ])->whereIn('transaction_type', ['reminder'])
+                        ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
+                        ->orderBy('transactionDate', 'desc')
+                        ->get();
+
+                    if ($currentAccount->list->custom->isEmpty()) {
+                        return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                    }
+
+                    foreach ($currentAccount->list->custom as $item) {
+                        $item->categoryData = Category::where([
+                            'id'     => $item->category_id,
+                            'status' => 1
+                        ])->first();
+
+                        if ($item->transaction_type === 'reminder') {
+                            $item->reminderPayment = ReminderPayment::where([
+                                'transaction_id' => $item->id,
+                                'status'         => 1
+                            ])->first();
+                        }
+                    }
+                }elseif($request->type === 'stats')
+                {
+                   $currentAccount->stats->custom = Transaction::where([
+                        'transactions.user_id' => $user->id,
+                        'account_id'           => $currentAccount->id
+                    ])->whereIn('transaction_type', ['reminder'])
+                    ->whereBetween('transactions.transactionDate', [
+                        $request->start_date,
+                        $request->end_date
+                    ])
+                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
+                    ->select(
+                        'categories.name as category_name',
+                        DB::raw('SUM(transactions.amount) as total_amount'),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
+                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
+                    )
+                    ->groupBy('categories.name')
+                    ->orderBy('categories.name', 'desc')
+                    ->get();
+
+                }else{
+                    return response()->json(['status' => false, 'message' => 'Please Select a Type'], 400);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction list fetched successfully',
+                    'data' => $currentAccount
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     public function deleteTransaction(Request $request)
     {
         try {
@@ -1355,8 +1733,9 @@ class Controller
                     "reference" => $request->reference,
                 ]);
                 if($request->transaction_type === 'reminder'){
-                    if (isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
+                    if (isset($request->name) && isset($request->reminder_date) && isset($request->reminder_time) && isset($request->recurrence) && isset($request->notify_before_minutes)) {
                         $request->validate([
+                            'name' => 'required|string',
                             'reminder_date' => 'required|date',
                             'reminder_time' => 'required',
                             'recurrence' => 'required|string',
@@ -1364,6 +1743,7 @@ class Controller
                         ]);
                         ReminderPayment::where(['transaction_id' => $request->transaction_id])->update([
                             "transaction_id" => $request->transaction_id,
+                            "reminder_name" => $request->name,
                             "reminder_date" => $request->reminder_date,
                             "reminder_time" => $request->reminder_time,
                             "recurrence" => $request->recurrence,
