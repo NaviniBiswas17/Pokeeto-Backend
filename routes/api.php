@@ -18,6 +18,7 @@ Route::post('getAccountList', [Controller::class, 'getAccountList']);
 Route::post('getAccount', [Controller::class, 'getAccount']);
 
 Route::post('addContributor', [Controller::class, 'addContributor']);
+Route::post('removeContributor', [Controller::class, 'removeContributor']);
 Route::post('getContributorList', [Controller::class, 'getContributorList']);
 
 Route::post('getUserCategoryList', [Controller::class, 'getUserCategoryList']);

@@ -435,6 +435,7 @@ class Controller
     public function addContributor(Request $request)
     {
         try {
+            $response = [];
             if (isset($request->token) && isset($request->account_id) && isset($request->contributor_email) && isset($request->role)) {
                 $request->validate([
                     'token' => 'required',
@@ -470,17 +471,26 @@ class Controller
                         "is_primary" => '1',
                         'last_login_at' => now()
                     ]);
+                    $mailTemp = EmailTemplate::where('slug', 'account-contributor-invite')->first();
+                    $html = Blade::render($mailTemp->body);
+                    Mail::to($request->contributor_email)->send(new MailTemp($html, $mailTemp->subject));
+                    MailLog::create([
+                        'to_email' => $request->contributor_email,
+                        'subject' => $mailTemp->subject,
+                        'body' => $html,
+                        'sent_at' => now(),
+                    ]);
+                    $response = [
+                        'status' => true,
+                        'message' => 'Contributor added successfully and Email Sent.',
+                    ];
+                }else{
+                    $response = [
+                        'status' => true,
+                        'message' => 'Contributor added But User Already Exists.',
+                    ];
                 }
 
-                $mailTemp = EmailTemplate::where('slug', 'account-contributor-invite')->first();
-                $html = Blade::render($mailTemp->body);
-                Mail::to($request->email)->send(new MailTemp($html, $mailTemp->subject));
-                MailLog::create([
-                    'to_email' => $request->email,
-                    'subject' => $mailTemp->subject,
-                    'body' => $html,
-                    'sent_at' => now(),
-                ]);
                 AccountContributor::create([
                     "account_id" => $request->account_id,
                     "contributor_id" => $contributorUser->id,
@@ -488,10 +498,7 @@ class Controller
                     "role" => $request->role,
                     "status" => 1
                 ]);
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Contributor added successfully',
-                ]);
+                return response()->json($response);
 
             } else {
                 return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
@@ -525,6 +532,36 @@ class Controller
                     'status' => true,
                     'message' => 'Contributor list fetched successfully',
                     'data' => $contributors
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function removeContributor(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->account_id) && isset($request->contributor_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'account_id' => 'required|integer',
+                    'contributor_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                AccountContributor::where([
+                    'account_id' => $request->account_id,
+                    'contributor_id' => $request->contributor_id,
+                    'status' => 1
+                ])->update(['status' => 0]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Contributor removed successfully',
                 ]);
 
             } else {
