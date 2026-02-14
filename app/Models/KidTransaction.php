@@ -13,6 +13,8 @@ class KidTransaction extends Authenticatable
     protected $table = 'kid_transactions';
     protected $fillable = [
         'parent_id',
+        'task_id',
+        'goal_id',
         'kid_id',
         'parent_account_id',
         'transaction_type',

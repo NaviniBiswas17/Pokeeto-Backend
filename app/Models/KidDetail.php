@@ -25,6 +25,7 @@ class KidDetail extends Authenticatable
          'userName',
          'relation',
          'date_of_birth',
+         'profile_image',
          'email',
          'email_verified_at',
          'password',

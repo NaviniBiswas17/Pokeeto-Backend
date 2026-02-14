@@ -86,7 +86,12 @@ class Controller
                     "password" =>   hash::make('12346'),
                 ]);
                 $user = User::where('email', $request->email)->first();
+                $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                while(UserDetail::where('unique_id', $uniqueId)->exists()){
+                    $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                }
                 UserDetail::create([
+                    'unique_id'=>$uniqueId,
                     "user_id" => $user->id,
                     "name" => $request->name,
                     "email" => $request->email,
@@ -135,7 +140,12 @@ class Controller
                         "password" =>   hash::make('12346'),
                     ]);
                     $user = User::where('email', $request->email)->first();
+                    $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                    while(UserDetail::where('unique_id', $uniqueId)->exists()){
+                        $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                    }
                     UserDetail::create([
+                        'unique_id'=>$uniqueId,
                         "user_id" => $user->id,
                         "name" => $request->name,
                         "email" => $request->email,
@@ -227,7 +237,12 @@ class Controller
         }
     }
 
-      public function dashboard(Request $request)
+    private function getAllAccounts($userId){
+        $mainAccounts =  Account::where('user_id', $userId)->pluck('id');
+        $contributorAccounts = AccountContributor::where('contributor_id', $userId)->pluck('account_id');
+        return $mainAccounts->merge($contributorAccounts);
+    }
+    public function dashboard(Request $request)
     {
         try {
            if (isset($request->token)) {
@@ -238,7 +253,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $accounts = Account::where('user_id', $user->id)->get();
+                $accounts = Account::whereIn('id', $this->getAllAccounts($user->id))->get();
                 foreach($accounts as $acc)
                 {
                     $acc->transData7Days = Transaction::where([
@@ -246,6 +261,7 @@ class Controller
                             'account_id' => $acc->id
                         ])
                         ->where('transactionDate', '>=', Carbon::now()->subDays(7))
+                        ->whereIn('transaction_type', ['income', 'expense'])
                         ->select(
                             DB::raw('DATE(transactionDate) as date'),
                             DB::raw("SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END) as total_income"),
@@ -258,6 +274,7 @@ class Controller
 
                     $acc->transData30Days = Transaction::where(['transactions.user_id'=> $user->id,'account_id'=>$acc->id])
                         ->where('transactions.transactionDate', '>=', Carbon::now()->subDays(30))
+                        ->whereIn('transaction_type', ['expense'])
                         ->join('categories', 'transactions.category_id', '=', 'categories.id')
                         ->select(
                             'categories.name as category_name',
@@ -272,7 +289,7 @@ class Controller
 
                 }
 
-                $transactionDash = Transaction::where(['user_id'=> $user->id])->limit(5)->get();
+                $transactionDash = Transaction::where(['user_id'=> $user->id])->whereIn('transaction_type', ['income', 'expense'])->orderBy('transactionDate', 'desc')->limit(5)->get();
                 foreach($transactionDash as $trans)
                 {
                     $categoryData = Category::where('id', $trans->category_id)->first();
@@ -300,7 +317,8 @@ class Controller
                                 'kid_accounts.balance'
                             )
                             ->get(),
-                        'reminders'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'reminder'])->limit(5)->get(),
+                        'reminders'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'reminder'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
+                        'transfers'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'transfer'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
                     ],
                     'message' => 'Dashboard Fetched successfully',
                 ]);
@@ -392,7 +410,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $accounts = Account::where(['user_id' => $user->id, 'status' => 1])->get();
+                $accounts = Account::whereIn('id', $this->getAllAccounts($user->id))->get();
                 return response()->json([
                     'status' => true,
                     'message' => 'Account list fetched successfully',
@@ -418,7 +436,13 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $account = Account::where(['user_id' => $user->id, 'id' => $request->account_id, 'status' => 1])->first();
+                $account = Account::where(['id' => $request->account_id, 'status' => 1])->first();
+                if (!$account) {
+                    return response()->json(['status' => false, 'message' => 'Account not found'], 500);
+                }
+                if (!in_array($account->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 return response()->json([
                     'status' => true,
                     'message' => 'Account fetched successfully',
@@ -662,14 +686,36 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+    public function getUserSetting(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $userSetting = UserSetting::where(['user_id' => $user->id, 'status' => 1])->first();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User setting fetched successfully',
+                    'data' => $userSetting
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     public function updateUserSetting(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->name) && isset($request->phone) && isset($request->dob) && isset($request->currency)  && isset($request->country)) {
+            if (isset($request->token) && isset($request->currency) && isset($request->country)) {
                 $request->validate([
-                    'name' => 'required|string',
-                    'phone'=> 'required|string',
-                    'dob'=> 'required|date',
                     'token' => 'required',
                     'currency' => 'required|string',
                     'country' => 'required|string',
@@ -687,14 +733,79 @@ class Controller
                         "metadata" => $request->metadata,
                     ]
                 );
-                UserDetail::where('user_id', $user->id)->update([
-                    "name" => $request->name,
-                    "phone" => $request->phone,
-                    "dob" => $request->dob
-                ]);
                 return response()->json([
                     'status' => true,
                     'message' => 'User Setting updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    public function updateUserProfile(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->name) && isset($request->phone) && isset($request->dob)) {
+                $request->validate([
+                    'name' => 'required|string',
+                    'phone'=> 'required|string',
+                    'dob'=> 'required|date',
+                    'profileImage'=> 'nullable|string',
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $userDetail = UserDetail::where(['user_id' => $user->id, 'status' => 1])->first();
+                $uniqueId =  $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                if(!$userDetail->unique_id){
+                    while(UserDetail::where('unique_id', $uniqueId)->exists()){
+                        $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                    }
+                }else{
+                    $uniqueId = $userDetail->unique_id;
+                }
+               if (!empty($request->profileImage)) {
+                    $image = $request->profileImage;
+                    if (preg_match('/^data:image\/(\w+);base64,/', $image, $type)) {
+                        $image = substr($image, strpos($image, ',') + 1);
+                        $type = strtolower($type[1]); // jpg, png, jpeg, etc.
+                        if (!in_array($type, ['jpg', 'jpeg', 'png', 'gif'])) {
+                            return response()->json(['error' => 'Invalid image type'], 400);
+                        }
+                        $image = str_replace(' ', '+', $image);
+                        $imageData = base64_decode($image);
+                        if ($imageData === false) {
+                            return response()->json(['error' => 'Base64 decode failed'], 400);
+                        }
+                        $imageName = 'user_profile_' . $uniqueId . '.' . $type;
+                        $folderPath = public_path('uploads/profile_images');
+                        if (!file_exists($folderPath)) {
+                            mkdir($folderPath, 0755, true);
+                        }
+                        $imagePath = $folderPath . '/' . $imageName;
+                        file_put_contents($imagePath, $imageData);
+                        $request->merge([
+                            'profilePath' => url('uploads/profile_images/' . $imageName)
+                        ]);
+                    } else {
+                        return response()->json(['error' => 'Invalid base64 format'], 400);
+                    }
+                }
+                UserDetail::where('user_id', $user->id)->update([
+                    "name" => $request->name,
+                    "phone" => $request->phone,
+                    "dob" => $request->dob,
+                    "profile_image" => $request->profilePath,
+                    'unique_id' => $uniqueId,
+                ]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'User Profile updated successfully',
                 ]);
 
             } else {
@@ -1007,7 +1118,10 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
 
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
 
@@ -1109,7 +1223,10 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
 
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
 
@@ -1211,7 +1328,10 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
 
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+               $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
 
@@ -1316,7 +1436,10 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
                 if($request->type === 'list'){
@@ -1399,7 +1522,10 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
                 if($request->type === 'list'){
@@ -1481,7 +1607,10 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $currentAccount = Account::where(['user_id'=> $user->id,'id'=>$request->account_id])->first();
+                $currentAccount = Account::where(['id'=>$request->account_id])->first();
+                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
+                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                }
                 $currentAccount->list = new \stdClass();
                 $currentAccount->stats = new \stdClass();
                 if($request->type === 'list'){
@@ -1779,6 +1908,7 @@ class Controller
                     'dob' => 'required|date',
                     'email' => 'required|email',
                     'userName' => 'nullable|string',
+                    'profileImage' => 'nullable|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
@@ -1787,6 +1917,33 @@ class Controller
                 $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
                 while(KidDetail::where('unique_Id', $uniqueId)->exists()){
                     $uniqueId =strtoupper(Str::random(4)) .rand('0000','9999');
+                }
+                 if (!empty($request->profileImage)) {
+                    $image = $request->profileImage;
+                    if (preg_match('/^data:image\/(\w+);base64,/', $image, $type)) {
+                        $image = substr($image, strpos($image, ',') + 1);
+                        $type = strtolower($type[1]); // jpg, png, jpeg, etc.
+                        if (!in_array($type, ['jpg', 'jpeg', 'png', 'gif'])) {
+                            return response()->json(['error' => 'Invalid image type'], 400);
+                        }
+                        $image = str_replace(' ', '+', $image);
+                        $imageData = base64_decode($image);
+                        if ($imageData === false) {
+                            return response()->json(['error' => 'Base64 decode failed'], 400);
+                        }
+                        $imageName = 'kid_profile_' . $uniqueId . '.' . $type;
+                        $folderPath = public_path('uploads/profile_images');
+                        if (!file_exists($folderPath)) {
+                            mkdir($folderPath, 0755, true);
+                        }
+                        $imagePath = $folderPath . '/' . $imageName;
+                        file_put_contents($imagePath, $imageData);
+                        $request->merge([
+                            'profilePath' => url('uploads/profile_images/' . $imageName)
+                        ]);
+                    } else {
+                        return response()->json(['error' => 'Invalid base64 format'], 400);
+                    }
                 }
                 if(isset($request->userName)){
                     $userNameExist = KidDetail::where('userName', $request->userName)->exists();
@@ -1802,6 +1959,7 @@ class Controller
                     "userName" => $request->userName ?? NULL,
                     "relation" => $request->relation,
                     "date_of_birth" => $request->dob,
+                    'profile_image' => $request->profilePath ?? NULL,
                     "email" => $request->email,
                     'password' => Hash::make("kid@123"),
                 ]);
@@ -2270,7 +2428,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $kidDetails = KidDetail::select(['id', 'name', 'email', 'relation'])->where(['parent_id' => $user->id])->get();
+                $kidDetails = KidDetail::where(['parent_id' => $user->id])->get();
 
                 foreach($kidDetails as $kid){
                     $kid->account = KidAccount::where(['kid_id' => $kid->id, 'is_primary' => 1])->first(['id', 'account_name', 'default_currency', 'balance']);
@@ -2289,6 +2447,112 @@ class Controller
         }
     }
 
+    public function approveTask(Request $request){
+         try {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->task_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'kid_id' => 'required|integer',
+                    'task_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                    return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
+                }
+                $task = KidTask::where(['id' => $request->task_id,'kid_id' => $request->kid_id])->first();
+                if (!$task) {
+                    return response()->json(['status' => false, 'message' => 'Task not found'], 404);
+                }
+                $exists = false;
+                if ($task->frequency == 'DAILY') {
+
+                    $exists = KidTransaction::where([
+                            'kid_id' => $request->kid_id,
+                            'parent_id' => $user->id,
+                            'task_id' => $request->task_id
+                        ])
+                        ->whereDate('transactionDate', Carbon::today())
+                        ->exists();
+                }
+                if ($task->frequency == 'WEEKLY') {
+
+                    $exists = KidTransaction::where([
+                            'kid_id' => $request->kid_id,
+                            'parent_id' => $user->id,
+                            'task_id' => $request->task_id
+                        ])
+                        ->whereBetween('transactionDate', [
+                            Carbon::now()->startOfWeek(),
+                            Carbon::now()->endOfWeek()
+                        ])
+                        ->exists();
+                }
+                if ($task->frequency == 'MONTHLY') {
+
+                    $exists = KidTransaction::where([
+                            'kid_id' => $request->kid_id,
+                            'parent_id' => $user->id,
+                            'task_id' => $request->task_id
+                        ])
+                        ->whereYear('transactionDate', Carbon::now()->year)
+                        ->whereMonth('transactionDate', Carbon::now()->month)
+                        ->exists();
+                }
+                if ($task->frequency == 'ONCE') {
+
+                    $exists = KidTransaction::where([
+                            'kid_id' => $request->kid_id,
+                            'parent_id' => $user->id,
+                            'task_id' => $request->task_id
+                        ])
+                        ->exists();
+                }
+                if ($exists) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Transaction already approved for this task based on frequency.'
+                    ], 400);
+                }
+
+                $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                if($account){
+                    $account->balance += $request->amount;
+                    $account->save();
+                }else{
+                    return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                }
+                $kidtransaction = KidTransaction::create([
+                    "parent_id" => $user->id,
+                    "kid_id" => $request->kid_id,
+                    "task_id" => $request->task_id ?? NULL,
+                    "parent_account_id" => $request->source_account_id ?? NULL,
+                    "transaction_type" => 'income',
+                    "transactionDate" => Carbon::now(),
+                    "flow" => 'credit',
+                    "amount" => $task->reward_amount,
+                    "currency" => 'INR',
+                    "description" => $task->description,
+                    "status" => 1,
+                    "reference" => $task->task_name ?? NULL,
+                ]);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Kid Transaction added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     public function addKidTransaction(Request $request)
     {
         try {
@@ -2302,7 +2566,6 @@ class Controller
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
                     'description' => 'nullable|string',
-                    'source_account_id' => 'nullable|integer',
                     'reference' => 'nullable|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
@@ -2314,33 +2577,16 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
                 }
                 if($request->transaction_type === 'income'){
-                    if(isset($request->source_account_id)){
-                        $targetAccount = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
-                        if($targetAccount){
-                            $sourceAccount = Account::where(['id' => $request->source_account_id, 'status' => 1])->first();
-                            if($sourceAccount){
-                                if($sourceAccount->balance < $request->amount){
-                                    return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
-                                }else{
-                                    $sourceAccount->balance -= $request->amount;
-                                    $sourceAccount->save();
-                                    $targetAccount->balance += $request->amount;
-                                    $targetAccount->save();
-                                }
-                            }else{
-                                return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
-                            }
-                        }else{
-                            return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
-                        }
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        $account->balance += $request->amount;
+                        $account->save();
                     }else{
-                        return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
                     }
                 }
 
                 if($request->transaction_type === 'expense'){
-                    $source_account_id = Account::where(['is_primary' => '1', 'status' => 1])->first();
-                    $request->merge(['source_account_id' => $source_account_id->id]);
                     $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
                     if($account){
                         if($account->balance < $request->amount){
@@ -2356,7 +2602,7 @@ class Controller
                 $kidtransaction = KidTransaction::create([
                     "parent_id" => $user->id,
                     "kid_id" => $request->kid_id,
-                    "parent_account_id" => $request->source_account_id,
+                    "parent_account_id" => $request->source_account_id ?? NULL,
                     "transaction_type" => $request->transaction_type,
                     "transactionDate" => $request->transactionDate,
                     "flow" => $request->flow,
@@ -2459,13 +2705,10 @@ class Controller
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
                 if($transaction->transaction_type === 'income'){
-                    $sourceAccount = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
-                    $targetAccount = Account::where(['id' => $transaction->parent_account_id, 'status' => 1])->first();
-                    if($sourceAccount && $targetAccount){
-                        $targetAccount->balance += $transaction->amount;
-                        $sourceAccount->balance -= $transaction->amount;
-                        $sourceAccount->save();
-                        $targetAccount->save();
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        $account->balance -= $transaction->amount;
+                        $account->save();
                     }
                 }
                 if($transaction->transaction_type === 'expense'){
@@ -2502,7 +2745,6 @@ class Controller
                     'amount' => 'required|numeric',
                     'currency' => 'required|string',
                     'description' => 'nullable|string',
-                    'source_account_id' => 'nullable|integer',
                     'reference' => 'nullable|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
@@ -2516,17 +2758,12 @@ class Controller
                 // Revert previous transaction effects first
                 $prevAmount = $transaction->amount;
                 $prevType = $transaction->transaction_type;
-                $prevTargetId = $transaction->parent_account_id;
-                $prevFlow = $transaction->flow;
 
-                if($prevType === 'transfer'){
+                if($prevType === 'income'){
                     $sourcePrev = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
-                    $targetPrev = Account::where(['id' => $prevTargetId, 'status' => 1])->first();
-                    if($sourcePrev && $targetPrev){
-                        $targetPrev->balance += $prevAmount;
+                    if($sourcePrev){
                         $sourcePrev->balance -= $prevAmount;
                         $sourcePrev->save();
-                        $targetPrev->save();
                     }
                 } elseif($prevType === 'expense'){
                     $accPrev = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
@@ -2536,28 +2773,13 @@ class Controller
                     }
                 }
 
-              if($request->transaction_type === 'income'){
-                    if(isset($request->source_account_id)){
-                        $targetAccount = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
-                        if($targetAccount){
-                            $sourceAccount = Account::where(['id' => $request->source_account_id, 'status' => 1])->first();
-                            if($sourceAccount){
-                                if($sourceAccount->balance < $request->amount){
-                                    return response()->json(['status' => false, 'message' => 'Insufficient balance in source account'], 400);
-                                }else{
-                                    $sourceAccount->balance -= $request->amount;
-                                    $sourceAccount->save();
-                                    $targetAccount->balance += $request->amount;
-                                    $targetAccount->save();
-                                }
-                            }else{
-                                return response()->json(['status' => false, 'message' => 'Source Account not found'], 404);
-                            }
-                        }else{
-                            return response()->json(['status' => false, 'message' => 'Target Account not found'], 404);
-                        }
+                if($request->transaction_type === 'income'){
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        $account->balance += $request->amount;
+                        $account->save();
                     }else{
-                        return response()->json(['status' => false, 'message' => 'Target Account ID is required for transfer flow'], 400);
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
                     }
                 }
 
@@ -2591,6 +2813,193 @@ class Controller
                 return response()->json([
                     'status' => true,
                     'message' => 'Transaction updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function addKidTransfer(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->goal_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->transactionDate)) {
+                $request->validate([
+                    'token' => 'required',
+                    'kid_id' => 'required|integer',
+                    'goal_id' => 'required|integer',
+                    'transaction_type' => 'required|string',
+                    'transactionDate' => 'required',
+                    'flow' => 'required|string',
+                    'amount' => 'required|numeric',
+                    'currency' => 'required|string',
+                    'description' => 'nullable|string',
+                    'reference' => 'nullable|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                    return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
+                }
+                if($request->transaction_type === 'expense'){
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        if($account->balance < $request->amount){
+                            return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
+                        }else{
+                            $account->balance -= $request->amount;
+                        }
+                        $account->save();
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                    }
+                }
+                $kidtransaction = KidTransaction::create([
+                    "parent_id" => $user->id,
+                    "kid_id" => $request->kid_id,
+                    "goal_id" => $request->goal_id ?? NULL,
+                    "parent_account_id" => $request->source_account_id ?? NULL,
+                    "transaction_type" => $request->transaction_type,
+                    "transactionDate" => $request->transactionDate,
+                    "flow" => $request->flow,
+                    "amount" => $request->amount,
+                    "currency" => $request->currency,
+                    "description" => $request->description,
+                    "status" => 1,
+                    "reference" => $request->reference ?? NULL,
+                ]);
+                KidGoal::where(['kid_id' => $kid->id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount + ' . $request->amount));
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Kid Transfer added successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+     public function editKidTransfer(Request $request)
+    {
+        try {
+            if (isset($request->transaction_id) && isset($request->token) && isset($request->goal_id) && isset($request->kid_id) && isset($request->transaction_type) && isset($request->flow) && isset($request->amount) && isset($request->currency) && isset($request->transactionDate)) {
+                $request->validate([
+                    'token' => 'required',
+                    'kid_id' => 'required|integer',
+                    'goal_id' => 'required|integer',
+                    'transaction_type' => 'required|string',
+                    'transactionDate' => 'required',
+                    'flow' => 'required|string',
+                    'amount' => 'required|numeric',
+                    'currency' => 'required|string',
+                    'description' => 'nullable|string',
+                    'reference' => 'nullable|string',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
+                if (!$kid) {
+                    return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
+                }
+                $transaction = KidTransaction::where(['kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->get();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                // Revert previous transaction effects first
+                $prevAmount = $transaction->amount;
+                $prevType = $transaction->transaction_type;
+
+                if($prevType === 'expense'){
+                    $accPrev = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($accPrev){
+                        KidGoal::where(['kid_id' => $request->kid_id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount - ' . $prevAmount));
+                        $accPrev->balance += $prevAmount;
+                        $accPrev->save();
+                    }
+                }
+                if($request->transaction_type === 'expense'){
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        if($account->balance < $request->amount){
+                            return response()->json(['status' => false, 'message' => 'Insufficient balance in account'], 400);
+                        }else{
+                            $account->balance -= $request->amount;
+                        }
+                        $account->save();
+                    }else{
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                    }
+                }
+                $kidtransaction = KidTransaction::where(['id' => $request->transaction_id])->update([
+                    "parent_id" => $user->id,
+                    "kid_id" => $request->kid_id,
+                    "goal_id" => $request->goal_id ?? NULL,
+                    "parent_account_id" => $request->source_account_id ?? NULL,
+                    "transaction_type" => $request->transaction_type,
+                    "transactionDate" => $request->transactionDate,
+                    "flow" => $request->flow,
+                    "amount" => $request->amount,
+                    "currency" => $request->currency,
+                    "description" => $request->description,
+                    "status" => 1,
+                    "reference" => $request->reference ?? NULL,
+                ]);
+                KidGoal::where(['kid_id' => $kid->id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount + ' . $request->amount));
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction updated successfully',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+     public function deleteKidTransfer(Request $request)
+    {
+        try {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->transaction_id)) {
+                $request->validate([
+                    'token' => 'required',
+                    'kid_id' => 'required|integer',
+                    'transaction_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = KidTransaction::where(['id' => $request->transaction_id, 'kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->first();
+                if(!$transaction){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                if($transaction->transaction_type === 'expense'){
+                    $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
+                    if($account){
+                        $account->balance += $transaction->amount;
+                        $account->save();
+                    }
+                }
+                $transaction->update(['status' => 0]);
+                KidGoal::where(['kid_id' => $request->kid_id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount - ' . $transaction->amount));
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction deleted successfully',
                 ]);
 
             } else {

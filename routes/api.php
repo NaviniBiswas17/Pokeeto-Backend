@@ -25,7 +25,9 @@ Route::post('getUserCategoryList', [Controller::class, 'getUserCategoryList']);
 Route::post('addUserCategory', [Controller::class, 'addUserCategory']);
 
 Route::post('getUserDetails', [Controller::class, 'getUserDetails']);
+Route::post('getUserSetting', [Controller::class, 'getUserSetting']);
 Route::post('updateUserSetting', [Controller::class, 'updateUserSetting']);
+Route::post('updateUserProfile', [Controller::class, 'updateUserProfile']);
 
 Route::post('inviteFriend', [Controller::class, 'inviteFriend']);
 Route::post('editInviteFriend', [Controller::class, 'editInviteFriend']);
@@ -56,6 +58,7 @@ Route::post('editKidTask', [Controller::class, 'editKidTask']);
 Route::post('deleteKidTask', [Controller::class, 'deleteKidTask']);
 Route::post('getKidTask', [Controller::class, 'getKidTask']);
 Route::post('getKidTaskDetails', [Controller::class, 'getKidTaskDetails']);
+Route::post('approveTask', [Controller::class, 'approveTask']);
 
 Route::post('addKidGoal', [Controller::class, 'addKidGoal']);
 Route::post('editKidGoal', [Controller::class, 'editKidGoal']);
@@ -70,3 +73,9 @@ Route::post('addKidTransaction', [Controller::class, 'addKidTransaction']);
 Route::post('getKidTransactionDetail', [Controller::class, 'getKidTransactionDetail']);
 Route::post('deleteKidTransaction', [Controller::class, 'deleteKidTransaction']);
 Route::post('editKidTransaction', [Controller::class, 'editKidTransaction']);
+
+
+
+Route::post('addKidTransfer', [Controller::class, 'addKidTransfer']);
+Route::post('editKidTransfer', [Controller::class, 'editKidTransfer']);
+Route::post('deleteKidTransfer', [Controller::class, 'deleteKidTransfer']);
