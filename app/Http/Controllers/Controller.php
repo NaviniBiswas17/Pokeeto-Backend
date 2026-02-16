@@ -288,7 +288,7 @@ class Controller
 
                 }
 
-                $transactionDash = Transaction::whereIn('transaction_type', ['income', 'expense'])->orderBy('transactionDate', 'desc')->limit(5)->get();
+                $transactionDash = Transaction::whereIn('transaction_type', ['income', 'expense'])->whereIn('account_id', $this->getAllAccounts($user->id))->orderBy('transactionDate', 'desc')->limit(5)->get();
                 foreach($transactionDash as $trans)
                 {
                     $categoryData = Category::where('id', $trans->category_id)->first();
@@ -316,8 +316,8 @@ class Controller
                                 'kid_accounts.balance'
                             )
                             ->get(),
-                        'reminders'=>  Transaction::where(['transaction_type'=>'reminder'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
-                        'transfers'=>  Transaction::where(['transaction_type'=>'transfer'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
+                        'reminders'=>  Transaction::where(['transaction_type'=>'reminder'])->whereIn('account_id', $this->getAllAccounts($user->id))->limit(5)->orderBy('transactionDate', 'desc')->get(),
+                        'transfers'=>  Transaction::where(['transaction_type'=>'transfer'])->whereIn('account_id', $this->getAllAccounts($user->id))->limit(5)->orderBy('transactionDate', 'desc')->get(),
                     ],
                     'message' => 'Dashboard Fetched successfully',
                 ]);
@@ -1209,96 +1209,35 @@ class Controller
      public function getTransferList(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id)) {
+            if (isset($request->token)) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
 
-                $currentAccount = Account::where(['id'=>$request->account_id])->first();
-                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
-                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
-                }
-                $currentAccount->list = new \stdClass();
-                $currentAccount->stats = new \stdClass();
-
-               $currentAccount->list->transData7Days = Transaction::where([
-                    'account_id' => $request->account_id,
+                $allTransfer = Transaction::where([
                     'status'     => 1
-                ])->whereIn('transaction_type', ['transfer'])
-                ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
+                ])->whereIn('account_id', $this->getAllAccounts($user->id))->whereIn('transaction_type', ['transfer'])
                 ->orderBy('transactionDate', 'desc')
                 ->get();
-                if(!$currentAccount->list->transData7Days){
+                if(!$allTransfer){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                foreach ($currentAccount->list->transData7Days as $item) {
+                foreach ($allTransfer as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
                     }
                 }
-
-
-                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'status' => 1])->whereBetween('transactionDate', [
-                        Carbon::now()->startOfMonth(),
-                        Carbon::now()->endOfMonth()
-                    ])->whereIn('transaction_type', ['transfer'])
-                    ->orderBy('transactionDate', 'desc')
-                    ->get();
-                if(!$currentAccount->list->transDatacurrentMonth){
-                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
-                }
-                foreach ($currentAccount->list->transDatacurrentMonth as $item) {
-                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
-                    if($item->transaction_type === 'reminder'){
-                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
-                        $item->reminderPayment = $reminderPayment;
-                    }
-                }
-
-                $currentAccount->stats->transData7Days = Transaction::where([
-                        'account_id' => $currentAccount->id
-                    ])->whereIn('transaction_type', ['transfer'])
-                    ->where('transactionDate', '>=', Carbon::now()->subDays(7))
-                    ->select(
-                        DB::raw('DATE(transactionDate) as date'),
-                        DB::raw("SUM(CASE WHEN flow = 'credit' THEN amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN flow = 'debit' THEN amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy(DB::raw('DATE(transactionDate)'))
-                    ->orderBy('date', 'desc')
-                    ->get();
-
-
-               $currentAccount->stats->transDatacurrentMonth = Transaction::where([
-                        'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['transfer'])
-                    ->whereBetween('transactionDate', [
-                        Carbon::now()->startOfMonth(),
-                        Carbon::now()->endOfMonth()
-                    ])
-                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
-                    ->select(
-                        'categories.name as category_name',
-                        DB::raw('SUM(transactions.amount) as total_amount'),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy('categories.name')
-                    ->orderBy('categories.name', 'desc')
-                    ->get();
-
 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Transaction fetched successfully',
-                    'data' => $currentAccount
+                    'message' => 'Transfer fetched successfully',
+                    'data' => $allTransfer
                 ]);
 
             } else {
@@ -1311,96 +1250,35 @@ class Controller
     public function getReminderList(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id)) {
+            if (isset($request->token) ) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
 
-               $currentAccount = Account::where(['id'=>$request->account_id])->first();
-                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
-                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
-                }
-                $currentAccount->list = new \stdClass();
-                $currentAccount->stats = new \stdClass();
-
-               $currentAccount->list->transData7Days = Transaction::where([
-                    'account_id' => $request->account_id,
+               $allTransfer = Transaction::where([
                     'status'     => 1
-                ])->whereIn('transaction_type', ['reminder'])
-                ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
+                ])->whereIn('account_id', $this->getAllAccounts($user->id))->whereIn('transaction_type', ['reminder'])
                 ->orderBy('transactionDate', 'desc')
                 ->get();
-                if(!$currentAccount->list->transData7Days){
+                if(!$allTransfer){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                foreach ($currentAccount->list->transData7Days as $item) {
+                foreach ($allTransfer as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
                     }
                 }
-
-
-                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id,'status' => 1])->whereBetween('transactionDate', [
-                        Carbon::now()->startOfMonth(),
-                        Carbon::now()->endOfMonth()
-                    ])->whereIn('transaction_type', ['reminder'])
-                    ->orderBy('transactionDate', 'desc')
-                    ->get();
-                if(!$currentAccount->list->transDatacurrentMonth){
-                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
-                }
-                foreach ($currentAccount->list->transDatacurrentMonth as $item) {
-                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
-                    if($item->transaction_type === 'reminder'){
-                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
-                        $item->reminderPayment = $reminderPayment;
-                    }
-                }
-
-                $currentAccount->stats->transData7Days = Transaction::where([
-                        'account_id' => $currentAccount->id
-                    ])->whereIn('transaction_type', ['reminder'])
-                    ->where('transactionDate', '>=', Carbon::now()->subDays(7))
-                    ->select(
-                        DB::raw('DATE(transactionDate) as date'),
-                        DB::raw("SUM(CASE WHEN flow = 'credit' THEN amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN flow = 'debit' THEN amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy(DB::raw('DATE(transactionDate)'))
-                    ->orderBy('date', 'desc')
-                    ->get();
-
-
-               $currentAccount->stats->transDatacurrentMonth = Transaction::where([
-                        'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['reminder'])
-                    ->whereBetween('transactionDate', [
-                        Carbon::now()->startOfMonth(),
-                        Carbon::now()->endOfMonth()
-                    ])
-                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
-                    ->select(
-                        'categories.name as category_name',
-                        DB::raw('SUM(transactions.amount) as total_amount'),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy('categories.name')
-                    ->orderBy('categories.name', 'desc')
-                    ->get();
-
 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Transaction fetched successfully',
-                    'data' => $currentAccount
+                    'message' => 'Reminder fetched successfully',
+                    'data' => $allTransfer
                 ]);
 
             } else {
@@ -1498,10 +1376,9 @@ class Controller
     public function getTransferListCustom(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
+            if (isset($request->token) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
                     'start_date' => 'required|date',
                     'end_date' => 'required|date',
                     'type' => 'required|string',
@@ -1510,65 +1387,28 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $currentAccount = Account::where(['id'=>$request->account_id])->first();
-                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
-                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+
+               $allTransfer = Transaction::where([
+                    'status'     => 1
+                ])->whereIn('account_id', $this->getAllAccounts($user->id))->whereIn('transaction_type', ['transfer'])
+                ->whereBetween('transactionDate', [$request->start_date, $request->end_date])
+                ->orderBy('transactionDate', 'desc')
+                ->get();
+                if(!$allTransfer){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                $currentAccount->list = new \stdClass();
-                $currentAccount->stats = new \stdClass();
-                if($request->type === 'list'){
-                   $currentAccount->list->custom = Transaction::where([
-                            'account_id' => $request->account_id,
-                            'status'     => 1
-                        ])->whereIn('transaction_type', ['transfer'])
-                        ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
-                        ->orderBy('transactionDate', 'desc')
-                        ->get();
-
-                    if ($currentAccount->list->custom->isEmpty()) {
-                        return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                foreach ($allTransfer as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
                     }
-
-                    foreach ($currentAccount->list->custom as $item) {
-                        $item->categoryData = Category::where([
-                            'id'     => $item->category_id,
-                            'status' => 1
-                        ])->first();
-
-                        if ($item->transaction_type === 'reminder') {
-                            $item->reminderPayment = ReminderPayment::where([
-                                'transaction_id' => $item->id,
-                                'status'         => 1
-                            ])->first();
-                        }
-                    }
-                }elseif($request->type === 'stats')
-                {
-                   $currentAccount->stats->custom = Transaction::where([
-                        'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['transfer'])
-                    ->whereBetween('transactions.transactionDate', [
-                        $request->start_date,
-                        $request->end_date
-                    ])
-                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
-                    ->select(
-                        'categories.name as category_name',
-                        DB::raw('SUM(transactions.amount) as total_amount'),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy('categories.name')
-                    ->orderBy('categories.name', 'desc')
-                    ->get();
-
-                }else{
-                    return response()->json(['status' => false, 'message' => 'Please Select a Type'], 400);
                 }
+
                 return response()->json([
                     'status' => true,
-                    'message' => 'Transaction list fetched successfully',
-                    'data' => $currentAccount
+                    'message' => 'Transfer fetched successfully',
+                    'data' => $allTransfer
                 ]);
 
             } else {
@@ -1581,10 +1421,9 @@ class Controller
     public function getReminderListCustom(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->account_id) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
+            if (isset($request->token) && isset($request->start_date) && isset($request->end_date) && isset($request->type)) {
                 $request->validate([
                     'token' => 'required',
-                    'account_id' => 'required|integer',
                     'start_date' => 'required|date',
                     'end_date' => 'required|date',
                     'type' => 'required|string',
@@ -1593,65 +1432,27 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $currentAccount = Account::where(['id'=>$request->account_id])->first();
-                if (!in_array($currentAccount->id, $this->getAllAccounts($user->id)->toArray())) {
-                    return response()->json(['status' => false, 'message' => 'Access denied'], 500);
+                  $allTransfer = Transaction::where([
+                    'status'     => 1
+                ])->whereIn('account_id', $this->getAllAccounts($user->id))->whereIn('transaction_type', ['reminder'])
+                ->whereBetween('transactionDate', [$request->start_date, $request->end_date])
+                ->orderBy('transactionDate', 'desc')
+                ->get();
+                if(!$allTransfer){
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
-                $currentAccount->list = new \stdClass();
-                $currentAccount->stats = new \stdClass();
-                if($request->type === 'list'){
-                   $currentAccount->list->custom = Transaction::where([
-                            'account_id' => $request->account_id,
-                            'status'     => 1
-                        ])->whereIn('transaction_type', ['reminder'])
-                        ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
-                        ->orderBy('transactionDate', 'desc')
-                        ->get();
-
-                    if ($currentAccount->list->custom->isEmpty()) {
-                        return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                foreach ($allTransfer as $item) {
+                    $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    if($item->transaction_type === 'reminder'){
+                        $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
+                        $item->reminderPayment = $reminderPayment;
                     }
-
-                    foreach ($currentAccount->list->custom as $item) {
-                        $item->categoryData = Category::where([
-                            'id'     => $item->category_id,
-                            'status' => 1
-                        ])->first();
-
-                        if ($item->transaction_type === 'reminder') {
-                            $item->reminderPayment = ReminderPayment::where([
-                                'transaction_id' => $item->id,
-                                'status'         => 1
-                            ])->first();
-                        }
-                    }
-                }elseif($request->type === 'stats')
-                {
-                   $currentAccount->stats->custom = Transaction::where([
-                        'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['reminder'])
-                    ->whereBetween('transactions.transactionDate', [
-                        $request->start_date,
-                        $request->end_date
-                    ])
-                    ->join('categories', 'transactions.category_id', '=', 'categories.id')
-                    ->select(
-                        'categories.name as category_name',
-                        DB::raw('SUM(transactions.amount) as total_amount'),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'credit' THEN transactions.amount ELSE 0 END) as total_income"),
-                        DB::raw("SUM(CASE WHEN transactions.flow = 'debit' THEN transactions.amount ELSE 0 END) as total_expense")
-                    )
-                    ->groupBy('categories.name')
-                    ->orderBy('categories.name', 'desc')
-                    ->get();
-
-                }else{
-                    return response()->json(['status' => false, 'message' => 'Please Select a Type'], 400);
                 }
+
                 return response()->json([
                     'status' => true,
-                    'message' => 'Transaction list fetched successfully',
-                    'data' => $currentAccount
+                    'message' => 'Reminder fetched successfully',
+                    'data' => $allTransfer
                 ]);
 
             } else {
