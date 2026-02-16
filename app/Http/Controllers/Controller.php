@@ -257,7 +257,6 @@ class Controller
                 foreach($accounts as $acc)
                 {
                     $acc->transData7Days = Transaction::where([
-                            'user_id'    => $user->id,
                             'account_id' => $acc->id
                         ])
                         ->where('transactionDate', '>=', Carbon::now()->subDays(7))
@@ -272,7 +271,7 @@ class Controller
                         ->get();
 
 
-                    $acc->transData30Days = Transaction::where(['transactions.user_id'=> $user->id,'account_id'=>$acc->id])
+                    $acc->transData30Days = Transaction::where(['account_id'=>$acc->id])
                         ->where('transactions.transactionDate', '>=', Carbon::now()->subDays(30))
                         ->whereIn('transaction_type', ['expense'])
                         ->join('categories', 'transactions.category_id', '=', 'categories.id')
@@ -289,7 +288,7 @@ class Controller
 
                 }
 
-                $transactionDash = Transaction::where(['user_id'=> $user->id])->whereIn('transaction_type', ['income', 'expense'])->orderBy('transactionDate', 'desc')->limit(5)->get();
+                $transactionDash = Transaction::whereIn('transaction_type', ['income', 'expense'])->orderBy('transactionDate', 'desc')->limit(5)->get();
                 foreach($transactionDash as $trans)
                 {
                     $categoryData = Category::where('id', $trans->category_id)->first();
@@ -317,8 +316,8 @@ class Controller
                                 'kid_accounts.balance'
                             )
                             ->get(),
-                        'reminders'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'reminder'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
-                        'transfers'=>  Transaction::where(['user_id'=> $user->id,'transaction_type'=>'transfer'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
+                        'reminders'=>  Transaction::where(['transaction_type'=>'reminder'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
+                        'transfers'=>  Transaction::where(['transaction_type'=>'transfer'])->limit(5)->orderBy('transactionDate', 'desc')->get(),
                     ],
                     'message' => 'Dashboard Fetched successfully',
                 ]);
@@ -1083,7 +1082,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = Transaction::where(['id' => $request->transaction_id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
@@ -1127,7 +1126,6 @@ class Controller
 
                $currentAccount->list->transData7Days = Transaction::where([
                     'account_id' => $request->account_id,
-                    'user_id'    => $user->id,
                     'status'     => 1
                 ])->whereIn('transaction_type', ['income', 'expense'])
                 ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
@@ -1145,7 +1143,7 @@ class Controller
                 }
 
 
-                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'status' => 1])->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
                     ])->whereIn('transaction_type', ['income', 'expense'])
@@ -1163,9 +1161,8 @@ class Controller
                 }
 
                 $currentAccount->stats->transData7Days = Transaction::where([
-                        'user_id'    => $user->id,
                         'account_id' => $currentAccount->id
-                    ])->whereIn('transaction_type', ['income', 'expense'])
+                    ])->whereIn('transaction_type', ['expense'])
                     ->where('transactionDate', '>=', Carbon::now()->subDays(7))
                     ->select(
                         DB::raw('DATE(transactionDate) as date'),
@@ -1178,9 +1175,8 @@ class Controller
 
 
                $currentAccount->stats->transDatacurrentMonth = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['income', 'expense'])
+                    ])->whereIn('transaction_type', ['expense'])
                     ->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
@@ -1232,7 +1228,6 @@ class Controller
 
                $currentAccount->list->transData7Days = Transaction::where([
                     'account_id' => $request->account_id,
-                    'user_id'    => $user->id,
                     'status'     => 1
                 ])->whereIn('transaction_type', ['transfer'])
                 ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
@@ -1250,7 +1245,7 @@ class Controller
                 }
 
 
-                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'status' => 1])->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
                     ])->whereIn('transaction_type', ['transfer'])
@@ -1268,7 +1263,6 @@ class Controller
                 }
 
                 $currentAccount->stats->transData7Days = Transaction::where([
-                        'user_id'    => $user->id,
                         'account_id' => $currentAccount->id
                     ])->whereIn('transaction_type', ['transfer'])
                     ->where('transactionDate', '>=', Carbon::now()->subDays(7))
@@ -1283,7 +1277,6 @@ class Controller
 
 
                $currentAccount->stats->transDatacurrentMonth = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
                     ])->whereIn('transaction_type', ['transfer'])
                     ->whereBetween('transactionDate', [
@@ -1337,7 +1330,6 @@ class Controller
 
                $currentAccount->list->transData7Days = Transaction::where([
                     'account_id' => $request->account_id,
-                    'user_id'    => $user->id,
                     'status'     => 1
                 ])->whereIn('transaction_type', ['reminder'])
                 ->where('transactionDate', '>=', Carbon::now()->subDays(7)) // ✅ operator goes here
@@ -1355,7 +1347,7 @@ class Controller
                 }
 
 
-                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id, 'user_id' => $user->id, 'status' => 1])->whereBetween('transactionDate', [
+                 $currentAccount->list->transDatacurrentMonth = Transaction::where(['account_id' => $request->account_id,'status' => 1])->whereBetween('transactionDate', [
                         Carbon::now()->startOfMonth(),
                         Carbon::now()->endOfMonth()
                     ])->whereIn('transaction_type', ['reminder'])
@@ -1373,7 +1365,6 @@ class Controller
                 }
 
                 $currentAccount->stats->transData7Days = Transaction::where([
-                        'user_id'    => $user->id,
                         'account_id' => $currentAccount->id
                     ])->whereIn('transaction_type', ['reminder'])
                     ->where('transactionDate', '>=', Carbon::now()->subDays(7))
@@ -1388,7 +1379,6 @@ class Controller
 
 
                $currentAccount->stats->transDatacurrentMonth = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
                     ])->whereIn('transaction_type', ['reminder'])
                     ->whereBetween('transactionDate', [
@@ -1445,7 +1435,6 @@ class Controller
                 if($request->type === 'list'){
                    $currentAccount->list->custom = Transaction::where([
                             'account_id' => $request->account_id,
-                            'user_id'    => $user->id,
                             'status'     => 1
                         ])->whereIn('transaction_type', ['income', 'expense'])
                         ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
@@ -1472,9 +1461,8 @@ class Controller
                 }elseif($request->type === 'stats')
                 {
                    $currentAccount->stats->custom = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
-                    ])->whereIn('transaction_type', ['income', 'expense'])
+                    ])->whereIn('transaction_type', ['expense'])
                     ->whereBetween('transactions.transactionDate', [
                         $request->start_date,
                         $request->end_date
@@ -1531,7 +1519,6 @@ class Controller
                 if($request->type === 'list'){
                    $currentAccount->list->custom = Transaction::where([
                             'account_id' => $request->account_id,
-                            'user_id'    => $user->id,
                             'status'     => 1
                         ])->whereIn('transaction_type', ['transfer'])
                         ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
@@ -1558,7 +1545,6 @@ class Controller
                 }elseif($request->type === 'stats')
                 {
                    $currentAccount->stats->custom = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
                     ])->whereIn('transaction_type', ['transfer'])
                     ->whereBetween('transactions.transactionDate', [
@@ -1616,7 +1602,6 @@ class Controller
                 if($request->type === 'list'){
                    $currentAccount->list->custom = Transaction::where([
                             'account_id' => $request->account_id,
-                            'user_id'    => $user->id,
                             'status'     => 1
                         ])->whereIn('transaction_type', ['reminder'])
                         ->whereBetween('transactionDate', [$request->start_date, $request->end_date]) // ✅ filter by start & end date
@@ -1643,7 +1628,6 @@ class Controller
                 }elseif($request->type === 'stats')
                 {
                    $currentAccount->stats->custom = Transaction::where([
-                        'transactions.user_id' => $user->id,
                         'account_id'           => $currentAccount->id
                     ])->whereIn('transaction_type', ['reminder'])
                     ->whereBetween('transactions.transactionDate', [
@@ -1690,7 +1674,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = Transaction::where(['id' => $request->transaction_id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
@@ -1762,7 +1746,7 @@ class Controller
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = Transaction::where(['id' => $request->transaction_id, 'user_id' => $user->id, 'status' => 1])->first();
+                $transaction = Transaction::where(['id' => $request->transaction_id,'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
