@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 
 Route::post('login', [Controller::class, 'login']);
+Route::post('verifySession', [Controller::class, 'verifySession']);
 Route::post('dashboard', [Controller::class, 'dashboard']);
 Route::post('loginGuest', [Controller::class, 'loginGuest']);
 Route::post('sendOtp', [Controller::class, 'sendOtp']);

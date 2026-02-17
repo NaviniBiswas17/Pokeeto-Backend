@@ -197,6 +197,29 @@ class Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+    public function verifySession(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Session is valid',
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     public function login(Request $request)
     {
         try {
