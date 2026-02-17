@@ -2659,7 +2659,7 @@ class Controller
                     "status" => 1,
                     "reference" => $request->reference ?? NULL,
                 ]);
-                KidGoal::where(['kid_id' => $kid->id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount + ' . $request->amount));
+                KidGoal::where(['kid_id' => $kid->id, 'status' => '1'])->update(['saved_amount' => DB::raw('saved_amount + ' . $request->amount)]);
 
                 return response()->json([
                     'status' => true,
@@ -2698,7 +2698,7 @@ class Controller
                 if (!$kid) {
                     return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
                 }
-                $transaction = KidTransaction::where(['kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->get();
+                $transaction = KidTransaction::where(['kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
@@ -2709,7 +2709,7 @@ class Controller
                 if($prevType === 'expense'){
                     $accPrev = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
                     if($accPrev){
-                        KidGoal::where(['kid_id' => $request->kid_id, 'status' => '1'])->update('saved_amount', DB::raw('saved_amount - ' . $prevAmount));
+                        KidGoal::where(['kid_id' => $request->kid_id, 'status' => '1'])->update(['saved_amount' => DB::raw('saved_amount + ' . $request->amount)]);
                         $accPrev->balance += $prevAmount;
                         $accPrev->save();
                     }
