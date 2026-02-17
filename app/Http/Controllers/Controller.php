@@ -35,6 +35,27 @@ use Illuminate\Support\Facades\DB;
 
 class Controller
 {
+
+public function getPrivacyPolicy(Request $request)
+    {
+        try {
+            $privacyPolicy = EmailTemplate::where('slug', 'privacy-policy')->first();
+            if (!$privacyPolicy) {
+                return response()->json(['status' => false, 'message' => 'Privacy Policy not found'], 404);
+            }
+            return response()->json([
+                'status' => true,
+                'message' => 'Privacy Policy fetched successfully',
+                'data' => [
+                    'title' => $privacyPolicy->subject,
+                    'content' => $privacyPolicy->body,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
     // public function login(Request $request)
     // {
     //     try {
@@ -1251,6 +1272,8 @@ class Controller
                 }
                 foreach ($allTransfer as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    $item->accountData = Account::where(['id' => $item->account_id, 'status' => 1])->first();
+                    $item->targetAccountData = Account::where(['id' => $item->target_account_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
@@ -1292,6 +1315,8 @@ class Controller
                 }
                 foreach ($allTransfer as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    $item->accountData = Account::where(['id' => $item->account_id, 'status' => 1])->first();
+                    $item->targetAccountData = Account::where(['id' => $item->target_account_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
@@ -1422,6 +1447,8 @@ class Controller
                 }
                 foreach ($allTransfer as $item) {
                     $item->categoryData = Category::where(['id' => $item->category_id, 'status' => 1])->first();
+                    $item->accountData = Account::where(['id' => $item->account_id, 'status' => 1])->first();
+                    $item->targetAccountData = Account::where(['id' => $item->target_account_id, 'status' => 1])->first();
                     if($item->transaction_type === 'reminder'){
                         $reminderPayment = ReminderPayment::where(['transaction_id' => $item->id, 'status' => 1])->first();
                         $item->reminderPayment = $reminderPayment;
@@ -1708,13 +1735,13 @@ class Controller
     public function addKid(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->name) && isset($request->relation) && isset($request->dob) && isset($request->email)) {
+            if (isset($request->token) && isset($request->name) && isset($request->relation) && isset($request->dob)) {
                 $request->validate([
                     'token' => 'required',
                     'name' => 'required|string',
                     'relation' => 'required|string',
                     'dob' => 'required|date',
-                    'email' => 'required|email',
+                    'email' => 'nullable|email',
                     'userName' => 'nullable|string',
                     'profileImage' => 'nullable|string',
                 ]);
@@ -1768,7 +1795,7 @@ class Controller
                     "relation" => $request->relation,
                     "date_of_birth" => $request->dob,
                     'profile_image' => $request->profilePath ?? NULL,
-                    "email" => $request->email,
+                    "email" => $request->email ?? NULL,
                     'password' => Hash::make("kid@123"),
                 ]);
 
@@ -1798,15 +1825,16 @@ class Controller
     public function editKid(Request $request)
     {
         try {
-            if (isset($request->token) && isset($request->kid_id) && isset($request->name) && isset($request->relation) && isset($request->dob) && isset($request->email)) {
+            if (isset($request->token) && isset($request->kid_id) && isset($request->name) && isset($request->relation) && isset($request->dob)) {
                 $request->validate([
                     'token' => 'required',
                     'kid_id' => 'required|integer',
                     'name' => 'required|string',
                     'relation' => 'required|string',
                     'dob' => 'required|date',
-                    'email' => 'required|email',
+                    'email' => 'nullable|email',
                     'userName' => 'nullable|string',
+                    'profileImage' => 'nullable|string',
                 ]);
                 $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
                 if (!$user) {
@@ -1816,12 +1844,40 @@ class Controller
                 if (!$kid) {
                     return response()->json(['status' => false, 'message' => 'Kid not found'], 400);
                 }
+                if (!empty($request->profileImage)) {
+                    $image = $request->profileImage;
+                    if (preg_match('/^data:image\/(\w+);base64,/', $image, $type)) {
+                        $image = substr($image, strpos($image, ',') + 1);
+                        $type = strtolower($type[1]); // jpg, png, jpeg, etc.
+                        if (!in_array($type, ['jpg', 'jpeg', 'png', 'gif'])) {
+                            return response()->json(['error' => 'Invalid image type'], 400);
+                        }
+                        $image = str_replace(' ', '+', $image);
+                        $imageData = base64_decode($image);
+                        if ($imageData === false) {
+                            return response()->json(['error' => 'Base64 decode failed'], 400);
+                        }
+                        $imageName = 'kid_profile_' . $kid->unique_Id . '.' . $type;
+                        $folderPath = public_path('uploads/profile_images');
+                        if (!file_exists($folderPath)) {
+                            mkdir($folderPath, 0755, true);
+                        }
+                        $imagePath = $folderPath . '/' . $imageName;
+                        file_put_contents($imagePath, $imageData);
+                        $request->merge([
+                            'profilePath' => url('uploads/profile_images/' . $imageName)
+                        ]);
+                    } else {
+                        return response()->json(['error' => 'Invalid base64 format'], 400);
+                    }
+                }
                 KidDetail::where(['id' => $request->kid_id])->update([
                     "name" => $request->name,
                     "userName" => $request->userName ?? NULL,
                     "relation" => $request->relation,
                     "date_of_birth" => $request->dob,
-                    "email" => $request->email,
+                    'profile_image' => $request->profilePath ?? NULL,
+                    "email" => $request->email ?? NULL,
                 ]);
                 return response()->json([
                     'status' => true,
