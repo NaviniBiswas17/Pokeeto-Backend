@@ -80,3 +80,5 @@ Route::post('editKidTransaction', [Controller::class, 'editKidTransaction']);
 Route::post('addKidTransfer', [Controller::class, 'addKidTransfer']);
 Route::post('editKidTransfer', [Controller::class, 'editKidTransfer']);
 Route::post('deleteKidTransfer', [Controller::class, 'deleteKidTransfer']);
+
+Route::post('getPrivacyPolicy', [Controller::class, 'getPrivacyPolicy']);
