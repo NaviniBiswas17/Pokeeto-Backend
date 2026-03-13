@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\AdminController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -82,3 +83,10 @@ Route::post('editKidTransfer', [Controller::class, 'editKidTransfer']);
 Route::post('deleteKidTransfer', [Controller::class, 'deleteKidTransfer']);
 
 Route::post('getPrivacyPolicy', [Controller::class, 'getPrivacyPolicy']);
+
+
+
+Route::prefix('admin')->group(function () {
+    Route::post('sendOtp', [AdminController::class, 'sendOtp']);
+    Route::post('adminLogin', [AdminController::class, 'adminLogin']);
+}); 
