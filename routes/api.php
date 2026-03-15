@@ -89,4 +89,6 @@ Route::post('getPrivacyPolicy', [Controller::class, 'getPrivacyPolicy']);
 Route::prefix('admin')->group(function () {
     Route::post('sendOtp', [AdminController::class, 'sendOtp']);
     Route::post('adminLogin', [AdminController::class, 'adminLogin']);
-}); 
+    Route::post('getAdminDetails', [AdminController::class, 'getAdminDetails']);
+    Route::post('getUsersList', [AdminController::class, 'getUsersList']);
+});

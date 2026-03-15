@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Admin;
+use App\Models\User;
 use App\Models\EmailTemplate;
 use App\Models\EmailOtp;
 use App\Mail\MailTemp;
@@ -157,6 +158,59 @@ class AdminController extends Controller
 
             } else {
                 return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getAdminDetails(Request $request)
+    {
+        try {
+            if (isset($request->token)) {
+                $request->validate([
+                    'token' => 'required',
+                ]);
+                $admin = Admin::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$admin) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Admin details fetched successfully',
+                    'data' => $admin
+                ]);
+
+            } else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getUsersList(Request $request){
+        try{
+            if(isset($request->token)){
+                $request->validate([
+                    'token'=>'required',
+                ]);
+                $admin = Admin::where(['remember_token'=>$request->token,'status'=>1])->first();
+                if(!$admin){
+                    return response()->json(['status'=>false,'message'=>'Invalid Credentials'],500);
+                }
+                if($admin->role != 'super_admin'){
+                    return response()->json(['status'=>false,'message'=>'Access denied. Only SuperAdmin allowed.'],403);
+                }
+                $users = User::select('id', 'name', 'email', 'status')->where('status', 1)->get();
+                return response()->json([
+                    'status'=>true,
+                    'message'=>'Users list fetched successfully',
+                    'data'=>$users
+                ]);
+
+            } else{
+                return response()->json(['status'=>false,'message'=>'Empty Parameters'],400);
             }
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
