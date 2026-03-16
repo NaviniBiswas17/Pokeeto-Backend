@@ -91,4 +91,5 @@ Route::prefix('admin')->group(function () {
     Route::post('adminLogin', [AdminController::class, 'adminLogin']);
     Route::post('getAdminDetails', [AdminController::class, 'getAdminDetails']);
     Route::post('getUsersList', [AdminController::class, 'getUsersList']);
+    Route::post('getUserDetails', [AdminController::class, 'getUserDetails']);
 });
