@@ -216,4 +216,45 @@ class AdminController extends Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
+
+
+    public function getUserDetails(Request $request)
+    {
+        try{
+            if(isset($request->token) && isset($request->user_id)){
+                $request->validate([
+                    'token'=>'required',
+                    'user_id'=>'required|exists:users,id'
+                ]);
+                $admin = Admin::where(['remember_token'=>$request->token,'status'=>1])->first();
+                if(!$admin){
+                    return response()->json(['status'=>false,'message'=>'Invalid Credentials'],500);
+                }
+                if($admin->role != 'super_admin'){
+                    return response()->json(['status'=>false,'message'=>'Access denied. Only SuperAdmin allowed.'],403);
+                }
+                // $user = User::select('id', 'name', 'email', 'status')->where('id', $request->user_id)->first();
+
+                $user = User::select('id','name','email','status')
+                    ->withCount(['accounts','kids'])
+                    ->with(['kids' => function($query){
+                        $query->select('id','parent_id','name','unique_id','relation','date_of_birth','profile_image');
+                    }, 'friend_invites' => function ($query){
+                        $query->select('inviter_user_id','invitee_email','processStatus','status');
+                    }])
+                    ->where('id',$request->user_id)
+                    ->first();
+                return response()->json([
+                    'status'=>true,
+                    'message'=>'User details fetched successfully',
+                    'data'=>$user
+                ]);
+
+            } else{
+                return response()->json(['status'=>false,'message'=>'Empty Parameters'],400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 }
