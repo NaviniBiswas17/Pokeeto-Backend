@@ -75,6 +75,7 @@ Route::post('addKidTransaction', [Controller::class, 'addKidTransaction']);
 Route::post('getKidTransactionDetail', [Controller::class, 'getKidTransactionDetail']);
 Route::post('deleteKidTransaction', [Controller::class, 'deleteKidTransaction']);
 Route::post('editKidTransaction', [Controller::class, 'editKidTransaction']);
+Route::post('updateKidTransactionStatus', [Controller::class, 'updateKidTransactionStatus']);
 
 
 
