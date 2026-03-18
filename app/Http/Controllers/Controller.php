@@ -2473,6 +2473,7 @@ public function getPrivacyPolicy(Request $request)
                     "amount" => $request->amount,
                     "currency" => $request->currency,
                     "description" => $request->description,
+                    "processStatus" => $request->transaction_type === 'income' ? 'added' : 'deducted',
                     "status" => 1,
                     "reference" => $request->reference ?? NULL,
                 ]);
@@ -2871,6 +2872,60 @@ public function getPrivacyPolicy(Request $request)
             }
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function updateKidTransactionStatus(Request $request){
+        try {
+            if (isset($request->token) && isset($request->transaction_id) && isset($request->kid_id) && isset($request->processStatus)) {
+                 $request->validate([
+                    'token' => 'required',
+                    'kid_id' => 'required|integer',
+                    'transaction_id' => 'required|integer',
+                    'processStatus' => 'required|in:approved,rejected'
+                ]);
+
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $transaction = KidTransaction::where([
+                    'id' => $request->transaction_id,
+                    'parent_id' => $user->id
+                ])->first();
+                if (!$transaction) {
+                    return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
+                }
+                if (in_array($transaction->processStatus, ['added', 'deducted'])) {
+                    return response()->json(['status' => false, 'message' => 'Cannot update this transaction'], 400);
+                }
+                if (in_array($transaction->processStatus, ['approved', 'rejected'])) {
+                    return response()->json(['status' => false, 'message' => 'Already processed'], 400);
+                }
+                
+                $transaction->processStatus = $request->processStatus;
+
+                if ($request->processStatus === 'approved') {
+                    $account = KidAccount::where([
+                        'kid_id' => $transaction->kid_id,
+                        'status' => 1
+                    ])->first();
+                    if (!$account) {
+                        return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                    }
+                    $account->balance += $transaction->amount;
+                    $account->save();
+                }
+
+                $transaction->save();
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Transaction updated successfully'
+                ]);
+            }
+        } catch (\Throwable $th) {
+            //throw $th;
         }
     }
 
