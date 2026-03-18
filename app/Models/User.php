@@ -26,6 +26,8 @@ class User extends Authenticatable
         'email_verified_at',
         'email',
         'status',
+        'created_at',
+        'updated_at'
     ];
 
      // 🔹 User → Accounts
