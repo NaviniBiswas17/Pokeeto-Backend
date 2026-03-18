@@ -202,11 +202,14 @@ class AdminController extends Controller
                 if($admin->role != 'super_admin'){
                     return response()->json(['status'=>false,'message'=>'Access denied. Only SuperAdmin allowed.'],403);
                 }
-                $users = User::select('id', 'name', 'email', 'status')->where('status', 1)->get();
+                $users = User::select('id', 'name', 'email', 'status', 'created_at')->where('status', 1)->get();
                 return response()->json([
                     'status'=>true,
                     'message'=>'Users list fetched successfully',
-                    'data'=>$users
+                    'data'=>[
+                        'users' => $users,
+                        'total_users' => count($users)
+                    ]
                 ]);
 
             } else{
