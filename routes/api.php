@@ -60,7 +60,7 @@ Route::post('editKidTask', [Controller::class, 'editKidTask']);
 Route::post('deleteKidTask', [Controller::class, 'deleteKidTask']);
 Route::post('getKidTask', [Controller::class, 'getKidTask']);
 Route::post('getKidTaskDetails', [Controller::class, 'getKidTaskDetails']);
-Route::post('approveTask', [Controller::class, 'approveTask']);
+Route::post('addTaskToTransaction', [Controller::class, 'addTaskToTransaction']);
 
 Route::post('addKidGoal', [Controller::class, 'addKidGoal']);
 Route::post('editKidGoal', [Controller::class, 'editKidGoal']);

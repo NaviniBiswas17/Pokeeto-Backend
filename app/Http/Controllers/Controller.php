@@ -2311,107 +2311,84 @@ public function getPrivacyPolicy(Request $request)
         }
     }
 
-    public function approveTask(Request $request){
+    public function addTaskToTransaction(){
          try {
-            if (isset($request->token) && isset($request->kid_id) && isset($request->task_id)) {
-                $request->validate([
-                    'token' => 'required',
-                    'kid_id' => 'required|integer',
-                    'task_id' => 'required|integer',
-                ]);
-                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
-                if (!$user) {
-                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
-                }
-                $kid = KidDetail::where(['id' => $request->kid_id,'parent_id' => $user->id])->first();
-                if (!$kid) {
-                    return response()->json(['status' => false, 'message' => 'Kid not found'], 404);
-                }
-                $task = KidTask::where(['id' => $request->task_id,'kid_id' => $request->kid_id])->first();
-                if (!$task) {
-                    return response()->json(['status' => false, 'message' => 'Task not found'], 404);
-                }
-                $exists = false;
-                if ($task->frequency == 'DAILY') {
+                $users = User::where(['status' => 1])->get();
+                foreach($users as $user)
+                {
+                    $tasks = KidTask::where('parent_id', $user->id)
+                        ->orderBy('kid_id', 'ASC')
+                        ->get();
+                    foreach($tasks as $task){
+                        if ($task->frequency == 'DAILY') {
+                            $exists = KidTransaction::where([
+                                    'kid_id' => $task->kid_id,
+                                    'parent_id' => $user->id,
+                                    'task_id' => $task->id
+                                ])
+                                ->whereDate('transactionDate', Carbon::today())
+                                ->exists();
+                        }
+                        if ($task->frequency == 'WEEKLY') {
+                            $exists = KidTransaction::where([
+                                    'kid_id' => $task->kid_id,
+                                    'parent_id' => $user->id,
+                                    'task_id' => $task->id
+                                ])
+                                ->whereBetween('transactionDate', [
+                                    Carbon::now()->startOfWeek(),
+                                    Carbon::now()->endOfWeek()
+                                ])
+                                ->exists();
+                        }
+                        if ($task->frequency == 'MONTHLY') {
+                            $exists = KidTransaction::where([
+                                    'kid_id' => $task->kid_id,
+                                    'parent_id' => $user->id,
+                                    'task_id' => $task->id
+                                ])
+                                ->whereYear('transactionDate', Carbon::now()->year)
+                                ->whereMonth('transactionDate', Carbon::now()->month)
+                                ->exists();
+                        }
+                        if ($task->frequency == 'ONCE') {
+                            $exists = KidTransaction::where([
+                                    'kid_id' => $task->kid_id,
+                                    'parent_id' => $user->id,
+                                    'task_id' => $task->id
+                                ])
+                                ->exists();
+                        }
+                        if ($exists) {
+                            return response()->json([
+                                'status' => false,
+                                'message' => 'Transaction already approved for this task based on frequency.'
+                            ], 400);
+                        }
 
-                    $exists = KidTransaction::where([
-                            'kid_id' => $request->kid_id,
-                            'parent_id' => $user->id,
-                            'task_id' => $request->task_id
-                        ])
-                        ->whereDate('transactionDate', Carbon::today())
-                        ->exists();
+                        $account = KidAccount::where(['kid_id' => $task->kid_id, 'status' => 1])->first();
+                        if($account){
+                            $account->balance += $task->reward_amount;
+                            $account->save();
+                        }else{
+                            return response()->json(['status' => false, 'message' => 'Account not found'], 404);
+                        }
+                        KidTransaction::create([
+                            "parent_id" => $user->id,
+                            "kid_id" => $task->kid_id,
+                            "task_id" => $task->id ?? NULL,
+                            "parent_account_id" => NULL,
+                            "transaction_type" => 'income',
+                            "transactionDate" => Carbon::now(),
+                            "flow" => 'credit',
+                            "amount" => $task->reward_amount,
+                            "currency" => 'INR',
+                            "description" => $task->description,
+                            "status" => 1,
+                            "reference" => $task->task_name ?? NULL,
+                        ]);
+                    }
                 }
-                if ($task->frequency == 'WEEKLY') {
-
-                    $exists = KidTransaction::where([
-                            'kid_id' => $request->kid_id,
-                            'parent_id' => $user->id,
-                            'task_id' => $request->task_id
-                        ])
-                        ->whereBetween('transactionDate', [
-                            Carbon::now()->startOfWeek(),
-                            Carbon::now()->endOfWeek()
-                        ])
-                        ->exists();
-                }
-                if ($task->frequency == 'MONTHLY') {
-
-                    $exists = KidTransaction::where([
-                            'kid_id' => $request->kid_id,
-                            'parent_id' => $user->id,
-                            'task_id' => $request->task_id
-                        ])
-                        ->whereYear('transactionDate', Carbon::now()->year)
-                        ->whereMonth('transactionDate', Carbon::now()->month)
-                        ->exists();
-                }
-                if ($task->frequency == 'ONCE') {
-
-                    $exists = KidTransaction::where([
-                            'kid_id' => $request->kid_id,
-                            'parent_id' => $user->id,
-                            'task_id' => $request->task_id
-                        ])
-                        ->exists();
-                }
-                if ($exists) {
-                    return response()->json([
-                        'status' => false,
-                        'message' => 'Transaction already approved for this task based on frequency.'
-                    ], 400);
-                }
-
-                $account = KidAccount::where(['kid_id' => $request->kid_id, 'status' => 1])->first();
-                if($account){
-                    $account->balance += $request->amount;
-                    $account->save();
-                }else{
-                    return response()->json(['status' => false, 'message' => 'Account not found'], 404);
-                }
-                $kidtransaction = KidTransaction::create([
-                    "parent_id" => $user->id,
-                    "kid_id" => $request->kid_id,
-                    "task_id" => $request->task_id ?? NULL,
-                    "parent_account_id" => $request->source_account_id ?? NULL,
-                    "transaction_type" => 'income',
-                    "transactionDate" => Carbon::now(),
-                    "flow" => 'credit',
-                    "amount" => $task->reward_amount,
-                    "currency" => 'INR',
-                    "description" => $task->description,
-                    "status" => 1,
-                    "reference" => $task->task_name ?? NULL,
-                ]);
-
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Kid Transaction added successfully',
-                ]);
-
-            } else {
-                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
-            }
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
