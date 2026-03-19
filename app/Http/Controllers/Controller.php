@@ -2604,6 +2604,7 @@ public function getPrivacyPolicy(Request $request)
                 $request->validate([
                     'token' => 'required',
                     'kid_id' => 'required|integer',
+                    'transaction_id' => 'required|integer',
                     'transaction_type' => 'required|string',
                     'transactionDate' => 'required',
                     'flow' => 'required|string',
@@ -2616,7 +2617,8 @@ public function getPrivacyPolicy(Request $request)
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
-                $transaction = KidTransaction::where(['kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->get();
+
+                $transaction = KidTransaction::where(['id' => $request->transaction_id, 'kid_id' => $request->kid_id, 'parent_id' => $user->id, 'status' => 1])->first();
                 if(!$transaction){
                     return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
                 }
@@ -2671,6 +2673,7 @@ public function getPrivacyPolicy(Request $request)
                     "amount" => $request->amount,
                     "currency" => $request->currency,
                     "description" => $request->description,
+                    "processStatus" => $request->transaction_type === 'income' ? 'added' : 'deducted',
                     "status" => 1,
                     "reference" => $request->reference ?? NULL,
                 ]);
@@ -2902,7 +2905,7 @@ public function getPrivacyPolicy(Request $request)
                 if (in_array($transaction->processStatus, ['approved', 'rejected'])) {
                     return response()->json(['status' => false, 'message' => 'Already processed'], 400);
                 }
-                
+
                 $transaction->processStatus = $request->processStatus;
 
                 if ($request->processStatus === 'approved') {
@@ -2924,8 +2927,8 @@ public function getPrivacyPolicy(Request $request)
                     'message' => 'Transaction updated successfully'
                 ]);
             }
-        } catch (\Throwable $th) {
-            //throw $th;
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
