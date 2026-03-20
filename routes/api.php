@@ -93,4 +93,10 @@ Route::prefix('admin')->group(function () {
     Route::post('getAdminDetails', [AdminController::class, 'getAdminDetails']);
     Route::post('getUsersList', [AdminController::class, 'getUsersList']);
     Route::post('getUserDetails', [AdminController::class, 'getUserDetails']);
+    Route::post('addContent', [AdminController::class, 'addContent']);
+    Route::post('getContentSections', [AdminController::class, 'getContentSections']);
+    Route::post('getContentList', [AdminController::class, 'getContentList']);
+    Route::post('deleteContent', [AdminController::class, 'deleteContent']);
+    Route::post('getSingleContent', [AdminController::class, 'getSingleContent']);
+    Route::post('updateContentItem', [AdminController::class, 'updateContentItem']);
 });
