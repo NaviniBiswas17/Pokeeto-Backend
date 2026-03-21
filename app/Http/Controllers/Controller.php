@@ -16,6 +16,8 @@ use App\Models\Category;
 use App\Models\UserCategory;
 use App\Models\UserSetting;
 use App\Models\Transaction;
+use App\Models\Content;
+use App\Models\ContentSection;
 use App\Models\ReminderPayment;
 use App\Mail\MailTemp;
 use Illuminate\Support\Facades\Blade;
@@ -2903,6 +2905,51 @@ public function getPrivacyPolicy(Request $request)
                     'status' => true,
                     'message' => 'Transaction updated successfully'
                 ]);
+            }else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getExploreContent(Request $request){
+        try {
+            if(isset($request->token)){
+                $request->validate([
+                    'token' => 'required'
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $sections = ContentSection::where('status', 1)->get();
+
+                $finalData = [];
+
+                foreach ($sections as $section) {
+                    $contents = Content::where([
+                            'section_id' => $section->id,
+                            'status' => 1
+                        ])
+                        ->orderBy('created_at', 'desc')
+                        ->take(3)
+                        ->get();
+
+                    $finalData[] = [
+                        'section_id' => $section->id,
+                        'section_name' => $section->name,
+                        'contents' => $contents
+                    ];
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Content fetched successfully',
+                    'data' => $finalData
+                ]);
+                
+            }else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
             }
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
