@@ -2947,7 +2947,7 @@ public function getPrivacyPolicy(Request $request)
                     'message' => 'Content fetched successfully',
                     'data' => $finalData
                 ]);
-                
+
             }else {
                 return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
             }
@@ -2956,4 +2956,35 @@ public function getPrivacyPolicy(Request $request)
         }
     }
 
+    public function getExploreContentBySection(Request $request){
+         try {
+            if(isset($request->token) && isset($request->section_id)){
+                $request->validate([
+                    'token' => 'required',
+                    'section_id' => 'required|integer'
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $contents = Content::select('id', 'title', 'description', 'type')->where([
+                        'section_id' => $request->section_id,
+                        'status' => 1
+                    ])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Content fetched successfully',
+                    'data' => $contents
+                ]);
+
+            }else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 }
