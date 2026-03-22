@@ -2967,6 +2967,9 @@ public function getPrivacyPolicy(Request $request)
                 if (!$user) {
                     return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
                 }
+
+                $section = ContentSection::select('name')->where(['id' => $request->section_id, 'status' => 1])->first();
+
                 $contents = Content::select('id', 'title', 'description', 'type')->where([
                         'section_id' => $request->section_id,
                         'status' => 1
@@ -2977,7 +2980,47 @@ public function getPrivacyPolicy(Request $request)
                 return response()->json([
                     'status' => true,
                     'message' => 'Content fetched successfully',
-                    'data' => $contents
+                    'data' => [
+                        'section_name' => $section->name,
+                        'content' => $contents
+                    ]
+                ]);
+
+            }else {
+                return response()->json(['status' => false, 'message' => 'Empty Parameters'], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getSingleContent(Request $request){
+        try {
+            if(isset($request->token) && isset($request->content_id) && isset($request->section_id)){
+                $request->validate([
+                    'token' => 'required',
+                    'section_id' => 'required|integer',
+                    'content_id' => 'required|integer',
+                ]);
+                $user = User::where(['remember_token' => $request->token, 'status' => 1])->first();
+                if (!$user) {
+                    return response()->json(['status' => false, 'message' => 'Invalid Credentials'], 500);
+                }
+                $content = Content::where([
+                        'id' => $request->content_id,
+                        'section_id' => $request->section_id,
+                        'status' => 1
+                    ])
+                    ->first();
+
+                if(!$content){
+                    return response()->json(['status' => false, 'message' => 'Content not found'], 404);
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Content fetched successfully',
+                    'data' => $content
                 ]);
 
             }else {
