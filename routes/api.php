@@ -87,6 +87,7 @@ Route::post('getPrivacyPolicy', [Controller::class, 'getPrivacyPolicy']);
 
 Route::post('getExploreContent', [Controller::class, 'getExploreContent']);
 Route::post('getExploreContentBySection', [Controller::class, 'getExploreContentBySection']);
+Route::post('getSingleContent', [Controller::class, 'getSingleContent']);
 
 
 
