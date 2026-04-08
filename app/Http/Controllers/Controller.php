@@ -2933,7 +2933,7 @@ public function getPrivacyPolicy(Request $request)
                             'status' => 1
                         ])
                         ->orderBy('created_at', 'desc')
-                        ->take(3)
+                        ->take(2)
                         ->get();
 
                     $finalData[] = [
